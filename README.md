@@ -1,0 +1,2 @@
+# SynthGraph
+Semantic Data Generation
