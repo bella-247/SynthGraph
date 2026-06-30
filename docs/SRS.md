@@ -148,40 +148,36 @@ The system is a strict linear pipeline. Data flows in one direction only. No sta
 
 ## 4. Supported Input Formats
 
-### 4.1 V1: Raw SQL Schema (DDL)
+### 4.1 V1: PostgreSQL SQL Schema (DDL)
 
-SynthGraph v1 supports raw SQL Data Definition Language (DDL) files. The parser must handle standard `CREATE TABLE` statements across the following databases:
+SynthGraph v1 supports PostgreSQL SQL Data Definition Language (DDL) files via `pg_query_go`, a native Go wrapper around PostgreSQL's own C parser. This ensures rock-solid compatibility with PostgreSQL DDL without the complexity of a hand-written parser.
 
-- PostgreSQL (primary target)
-- MySQL / MariaDB (secondary)
-- SQLite (tertiary)
+**Parser Implementation:**
+- Uses `pg_query_go` (github.com/pganalyze/pg_query_go) for AST generation
+- PostgreSQL parser is embedded — no runtime dependency on PostgreSQL installation
+- Supports all PostgreSQL DDL constructs that PostgreSQL 12+ supports natively
+- Single-pass translation from PostgreSQL AST to internal `schema.Model`
 
 **Supported DDL constructs in V1:**
+All PostgreSQL CREATE TABLE syntax, including:
+- Column definitions with all PostgreSQL-supported data types
+- Primary key constraints (single and composite)
+- Foreign key constraints with ON DELETE/UPDATE actions
+- Unique constraints (single and composite)
+- NOT NULL and DEFAULT clauses
+- CHECK constraints (parsed, not enforced in v1)
+- PostgreSQL-specific features: SERIAL/BIGSERIAL, GENERATED, ARRAY types, named ENUM types
 
-```sql
-CREATE TABLE table_name (
-  column_name data_type [NOT NULL] [DEFAULT value],
-  column_name data_type [UNIQUE],
-  PRIMARY KEY (column_name),
-  FOREIGN KEY (column_name) REFERENCES other_table(column_name)
-    [ON DELETE CASCADE | SET NULL | RESTRICT],
-  UNIQUE (col1, col2),          -- composite unique constraints
-  CHECK (expression)            -- basic check constraints (v1: logged, not enforced)
-);
-```
+Since the parser is PostgreSQL's own, if PostgreSQL parses it, SynthGraph v1 parses it.
 
-**Supported data types (V1):**
+**Why PostgreSQL First?**
+- PostgreSQL's parser is battle-tested on millions of queries and handles every edge case (quoted identifiers, comments, complex expressions)
+- Building a hand-written parser would delay v1 by 4-8 weeks and introduce maintenance burden
+- SynthGraph's value is not in parsing — it's in graph-based dependency resolution, constraint planning, and deterministic generation
+- Future support for MySQL, SQLite, and Prisma is trivial once the translator pattern is proven
 
-| Category | Types |
-|---|---|
-| Integer | `INT`, `INTEGER`, `BIGINT`, `SMALLINT`, `SERIAL`, `BIGSERIAL` |
-| Decimal | `DECIMAL`, `NUMERIC`, `FLOAT`, `REAL`, `DOUBLE PRECISION` |
-| Text | `VARCHAR(n)`, `TEXT`, `CHAR(n)` |
-| Boolean | `BOOLEAN`, `BOOL` |
-| Date/Time | `DATE`, `TIMESTAMP`, `TIMESTAMPTZ`, `TIME` |
-| UUID | `UUID` |
-| JSON | `JSON`, `JSONB` (generate valid empty object `{}` in v1) |
-| Enum | `ENUM('val1', 'val2')` or PostgreSQL `CREATE TYPE name AS ENUM` |
+**Data Types Supported:**
+All PostgreSQL data types are supported. SynthGraph maps them internally to abstract types (INT, BIGINT, TEXT, DECIMAL, BOOLEAN, DATE, TIMESTAMP, UUID, JSON, ENUM).
 
 ### 4.2 Parser Interface Contract
 
@@ -189,19 +185,25 @@ Every parser, regardless of format, must implement the following Go interface:
 
 ```go
 type SchemaParser interface {
-    // Parse reads the schema source and returns the unified internal model.
-    // Returns an error if the schema is malformed or unsupported.
+    // Parse reads a schema source file and returns the unified internal schema model.
+    // The parser handles all dialect-specific AST transformations internally.
     Parse(source []byte) (*schema.Model, error)
 
-    // Name returns the parser's identifier (e.g. "sql", "prisma")
+    // Name returns the parser identifier (e.g., "postgresql", "mysql", "prisma")
     Name() string
 
-    // SupportedExtensions returns file extensions this parser handles
+    // SupportedExtensions returns file extensions this parser handles (e.g., [".sql"])
     SupportedExtensions() []string
 }
+
+// V1 Implementation: PostgreSQL Parser
+// The PostgreSQL parser wraps pg_query_go's AST and translates to schema.Model.
+// Future parsers (MySQL, Prisma) implement the same interface with their own translators.
+// The rest of SynthGraph (graph builder, planner, generator, validator, exporter)
+// only ever sees schema.Model and never needs to know the source format.
 ```
 
-The SQL parser in v1 is the only implementation of this interface. The interface is defined now so that future parsers (Prisma, Drizzle) can be added without touching the pipeline.
+The PostgreSQL parser in v1 is the only implementation of this interface. The interface is defined now so that future parsers (MySQL, Prisma, Drizzle) can be added without touching the pipeline.
 
 ---
 
@@ -871,7 +873,7 @@ synthgraph version
 
 ### 15.1 Included in V1
 
-- Raw SQL DDL parser (PostgreSQL-compatible)
+- PostgreSQL DDL parser (via pg_query_go + translator)
 - Internal Schema Model
 - Directed schema graph construction
 - Topological sort (Kahn's algorithm)

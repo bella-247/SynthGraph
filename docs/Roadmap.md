@@ -22,7 +22,7 @@
 ```
 V1 (Summer Goal)         V2 (Fall)               V3 (Long-term)
 ─────────────────        ─────────────────        ─────────────────
-SQL Parser               Prisma Parser            Web Application
+PostgreSQL Parser        Prisma Parser            Web Application
 Graph Engine             Drizzle Parser           Direct DB Insert
 Constraint Planner       Distributions            Schema Designer
 Generator Engine         Business Rules           REST API Server
@@ -59,29 +59,43 @@ V1 is the only goal this summer. V2 and V3 are defined so architectural decision
 - Write unit tests for model construction (no parsing yet — build models by hand in tests)
 - Commit: `feat(schema): internal schema model types`
 
-#### 1.3 SQL Parser
+#### 1.3 PostgreSQL Parser + Translator
 
-- Integrate `github.com/xwb1989/sqlparser` or `github.com/auxten/postgresql-parser`
-  - Evaluate both; pick the one with better PostgreSQL DDL support
-- Implement `SQLParser` satisfying the `SchemaParser` interface
-- Handle: `CREATE TABLE`, `PRIMARY KEY`, `FOREIGN KEY`, `UNIQUE`, `NOT NULL`, `DEFAULT`, `CHECK`
-- Handle: all V1 data types listed in SRS §4.1
-- Handle: `CREATE TYPE name AS ENUM` (PostgreSQL enums)
-- Return clear `ParseError` with line number and description on failure
+- Integrate `github.com/pganalyze/pg_query_go` (wrapper around PostgreSQL's C parser)
+  - `go get github.com/pganalyze/pg_query_go`
+  - Verify CGO build works: `go build -v ./cmd/synthgraph` (requires libpq-dev or equivalent)
+- Implement `PostgreSQLParser` satisfying the `SchemaParser` interface
+  - Call `pg_query.Parse()` to get the PostgreSQL AST
+  - Walk the AST and translate to `schema.Model` (this is the only dialect-specific code)
+- Translator must handle:
+  - All CREATE TABLE statement variations
+  - Column definitions with all PostgreSQL data types
+  - All constraint types: PK, FK, UNIQUE, NOT NULL, DEFAULT, CHECK
+  - PostgreSQL-specific: SERIAL, GENERATED, ARRAY, named ENUM types
+  - Quoted identifiers, comments (automatically handled by pg_query_go)
+- Parser wrapper stores the original SQL string for error reporting
+- Return clear `ParseError` with line number and description on failure (from pg_query_go)
 - Unit tests:
   - Simple table (no relationships)
-  - Table with single FK
+  - Table with single FK and ON DELETE CASCADE
   - Table with composite PK
   - Table with composite unique constraint
   - Table with self-referencing FK
-  - Enum type declaration
+  - PostgreSQL ENUM type declaration
   - Multiple tables with cross-references
-  - Malformed SQL → expect error
-- Commit: `feat(parser): SQL DDL parser with full constraint support`
+  - Quoted identifiers: `"user"`, `"Order"` (PostgreSQL-style)
+  - Comments: `-- inline` and `/* block */`
+  - Malformed SQL → expect error with line number
+  - All V1 data types from SRS §4.1
+- Commit: `feat(parser): PostgreSQL DDL parser via pg_query_go + translator`
+
+**No hand-written lexer or recursive descent parser.** PostgreSQL's parser is production-ready; we translate its AST.
 
 ---
 
 ### Phase 2 — Graph Engine (Week 2–3)
+
+**Parser Status:** By the end of Week 1, the PostgreSQL parser and translator are complete. Phases 2–7 have zero parser code to write — the schema.Model is guaranteed correct. All following stages (graph, planner, generator, validator, exporter, CLI) are parser-agnostic.
 
 **Goal:** The schema is a graph. We know what depends on what.
 
@@ -517,7 +531,7 @@ This plan assumes a 7-week summer timeline with focused daily work sessions.
 
 | Week | Focus | Deliverable |
 |---|---|---|
-| **Week 1** | Project scaffold, schema model, SQL parser | Parser tests all passing |
+| **Week 1** | Project scaffold, schema model, PostgreSQL parser + translator | Parser tests all passing |
 | **Week 2** | Graph construction, topological sort | Graph engine fully tested |
 | **Week 3** | Cycle detection, planner, generator registry | Plan builder working |
 | **Week 4** | Semantic generators, row engine | Data generation working end-to-end |

@@ -4,6 +4,17 @@ This document explains the graph theory foundations of SynthGraph in detail. It 
 
 ---
 
+## Parser Independence
+
+SynthGraph parses PostgreSQL DDL using `pg_query_go` (PostgreSQL's own parser). The AST is translated once into a unified `schema.Model`. From that point forward, every stage in SynthGraph — graph building, constraint planning, generation, validation, export — operates purely on the schema model and has zero knowledge of the original SQL format.
+
+This separation of concerns means:
+- The graph engine is dialect-agnostic
+- Adding MySQL or Prisma support is a localized translator, not a system redesign
+- The core IP (constraint-aware generation, cycle resolution) is reusable across all dialects
+
+---
+
 ## Why a Graph?
 
 A relational schema is not a flat list of tables. It is a network of dependencies. Table B cannot have data inserted before Table A if B has a foreign key referencing A. This ordering problem is a classic application of directed graph theory.

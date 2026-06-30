@@ -15,14 +15,15 @@ synthgraph/
 │
 ├── internal/
 │   ├── schema/
-│   │   └── model.go                 # Internal schema representation (Model, Table, Column, etc.)
+│   │   └── model.go                 # Unified internal representation (parser-agnostic)
 │   │
 │   ├── parser/
-│   │   ├── parser.go                # SchemaParser interface
-│   │   ├── sql/
-│   │   │   ├── sql_parser.go        # SQL DDL parser implementation
-│   │   │   └── sql_parser_test.go
-│   │   └── registry.go              # Parser registry (auto-detect by file extension)
+│   │   ├── parser.go                # SchemaParser interface definition
+│   │   ├── postgres/
+│   │   │   ├── parser.go            # PostgreSQL parser wrapping pg_query_go
+│   │   │   ├── translator.go        # Translate PostgreSQL AST to schema.Model
+│   │   │   └── translator_test.go
+│   │   └── registry.go              # Auto-detect parser by file extension
 │   │
 │   ├── graph/
 │   │   ├── graph.go                 # Node, Edge, SchemaGraph types
@@ -119,11 +120,17 @@ CLI flags
     │
     ▼
 [Parser Registry]
-    │  detects format by extension
+    │  detects format by file extension (.sql → PostgreSQL)
     │
     ▼
-[SQL Parser]                         internal/parser/sql/
-    │  reads .sql file
+[PostgreSQL Parser]                  internal/parser/postgres/parser.go
+    │  calls pg_query_go.Parse()
+    │  gets PostgreSQL AST
+    │
+    ▼
+[AST Translator]                     internal/parser/postgres/translator.go
+    │  walks PostgreSQL AST
+    │  maps to schema.Model (tables, columns, constraints)
     │  returns *schema.Model
     │
     ▼
@@ -179,10 +186,18 @@ Output file / stdout
 ```go
 // internal/parser/parser.go
 type SchemaParser interface {
+    // Parse reads the schema source and returns the unified internal model.
+    // All dialect-specific logic (AST transformation) is internal to the parser.
+    // The rest of SynthGraph only ever sees schema.Model.
     Parse(source []byte) (*schema.Model, error)
-    Name() string
-    SupportedExtensions() []string
+
+    Name() string // e.g., "postgresql"
+    SupportedExtensions() []string // e.g., [".sql"]
 }
+
+// V1: PostgreSQL Parser wraps pg_query_go
+// V2+: MySQL, Prisma, etc. each implement SchemaParser with their own translators
+// All feed the same schema.Model. Graph, planner, generator are parser-agnostic.
 ```
 
 ### Exporter
@@ -213,6 +228,7 @@ These rules are enforced. Violations are architectural bugs.
 |---|---|---|
 | `schema` | stdlib only | anything internal |
 | `parser/*` | `schema`, stdlib | `graph`, `generator`, `validator`, `exporter` |
+| `parser/postgres` | `schema`, stdlib, `pg_query_go` | nothing (parser-specific layer) |
 | `graph` | `schema`, stdlib | `parser`, `generator`, `validator`, `exporter` |
 | `planner` | `schema`, `graph`, stdlib | `parser`, `generator`, `validator`, `exporter` |
 | `generator` | `schema`, `planner`, stdlib | `parser`, `graph`, `validator`, `exporter` |
