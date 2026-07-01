@@ -8,7 +8,7 @@ This document explains how to contribute effectively.
 
 ## Before You Start
 
-Read the [Architecture document](docs/architecture.md) and the [SRS](SRS.md) before making any significant contribution. SynthGraph has strict pipeline boundaries and architectural rules. Understanding them upfront will save you from rework.
+Read the [Architecture document](architecture.md) before making any significant contribution. SynthGraph has strict pipeline boundaries and architectural rules. Understanding them upfront will save you from rework.
 
 ---
 
@@ -17,7 +17,6 @@ Read the [Architecture document](docs/architecture.md) and the [SRS](SRS.md) bef
 **Requirements:**
 - Go 1.21 or higher
 - `golangci-lint` (for linting)
-- `make` (for build targets)
 - PostgreSQL development headers (required for pg_query_go compilation)
 
 **Setup:**
@@ -32,89 +31,60 @@ cd synthgraph
 # Windows: (included with PostgreSQL installer, or use WSL)
 
 go mod download
-make build
-make test
-```
-
-**Run the CLI locally:**
-
-```bash
-go run ./cmd/synthgraph generate --schema testdata/schemas/simple.sql --rows 50
-```
-
-**Run all tests:**
-
-```bash
-make test
-```
-
-**Run linter:**
-
-```bash
-make lint
+go build ./...
+go test ./...
 ```
 
 ---
 
-## Types of Contributions
+## Core Design Principles
 
-### Easy — Good First Issues
+These rules exist to keep the codebase maintainable, readable, and approachable for developers of all skill levels.
 
-These require no deep architectural knowledge.
+### 1. Descriptive, Explicit Naming
 
-- **Add a new semantic field generator**
-  Add a new name pattern in one of the `generators_*.go` files and register it in the registry. Write a unit test for it.
+- **No cryptic abbreviations**: Variable names like `tb`, `st`, `ci`, or `idx` are forbidden outside the tightest loops (and even then, descriptive names are strongly preferred). Use full words: `tableBuilder`, `schemaTranslator`, `columnIndex`, `targetIndex`.
+- **Clear receiver names**: Unlike traditional Go conventions that favor 1-2 letter receivers (`func (s *Server)`), use fully spelled out receiver names: `func (translator *schemaTranslator)`.
+- Variables should describe *what* they hold, not their underlying type.
 
-- **Add a new test schema**
-  Add a realistic `.sql` schema to `testdata/schemas/` and a corresponding golden file to `testdata/golden/`. Good schemas: SaaS product, healthcare, logistics, inventory.
+### 2. Single Responsibility Principle (SRP)
 
-- **Improve an error message**
-  Find an error that isn't clear or actionable and make it better. Follow the format in SRS §12.2.
+- Methods should do exactly one thing. If a method needs paragraph comments like `// Validate Primary Keys` followed by `// Validate Unique Constraints`, those paragraphs belong in their own helper methods.
+- Large validation logic or pipeline steps should be split into smaller, composable functions.
 
-- **Expand translator test coverage**
-  Test an edge case: PostgreSQL quoted identifiers, comments, complex types, etc.
-  The pg_query_go parser handles it; add a test case to the translator to verify mapping.
+### 3. Avoid "Ugly" Conditionals
 
-### Medium — Requires Understanding the Pipeline
+- Do not add hacky `if/else` blocks just to make tests pass.
+- Use declarative boolean logic where applicable (e.g., `nullable = !raw.NotNull && !raw.IsPrimaryKey`).
+- Reduce nesting with early returns to keep the "happy path" un-indented.
 
-- **Add a new exporter**
-  Implement the `Exporter` interface in `internal/exporter/`. Write unit tests and a golden test.
+### 4. Self-Documenting Code over Comments
 
-- **Improve `inspect` output**
-  Make the inspection report more useful — better formatting, additional statistics, clearer cycle descriptions.
-
-- **Optimize graph performance**
-  Profile the graph engine and improve performance for large schemas (50+ tables).
-
-### Hard — Requires Deep Architecture Knowledge
-
-- **Add a new schema parser (MySQL, SQLite, Prisma)**
-  Implement the `SchemaParser` interface by wrapping an existing parser library (e.g., `vitess` for MySQL) and writing a translator from that AST to `schema.Model`. See `internal/parser/postgresql/translator.go` as the pattern. The graph engine and rest of SynthGraph require zero changes — they're parser-agnostic.
-
-- **Implement CHECK constraint enforcement**
-  This requires an expression evaluator inside the generator. Discuss in an issue before starting.
+- Well-named functions and variables reduce the need for comments.
+- Comments should explain *why* something is done (the business logic or an edge case), not *what* is being done (the code itself should explain what).
 
 ---
 
-## Contribution Rules
-
-### Code Style
+## Code Style
 
 - Run `golangci-lint run ./...` before submitting. Zero warnings expected.
 - Follow standard Go conventions (`gofmt`, `goimports`).
-- No `interface{}` or `any` in pipeline types except where explicitly justified (generator output).
 - Every exported function must have a doc comment.
 
-### Architectural Rules
+---
+
+## Architectural Rules
 
 These are non-negotiable. PRs that violate them will not be merged.
 
-- **No cross-stage imports.** The dependency rules in `docs/architecture.md` are enforced. Parser does not import generator. Generator does not import validator. Etc.
+- **No cross-stage imports.** The dependency rules in `architecture.md` are enforced. Parser does not import generator. Generator does not import validator. Etc.
 - **No silent failures.** Every error path must return an error. No logging-and-continuing.
 - **No global state.** All state flows through function arguments and return values.
 - **Determinism is sacred.** No `time.Now()`, `rand.Int()` without seeding, or any other non-deterministic call in the generation pipeline.
 
-### Testing Rules
+---
+
+## Testing Rules
 
 Every PR must include tests. No exceptions.
 
@@ -123,26 +93,10 @@ Every PR must include tests. No exceptions.
 - New exporters: golden test comparing output against expected file
 - Bug fixes: a test that would have caught the bug
 
-**Golden test workflow:**
+Run tests before pushing:
 
 ```bash
-# Update golden files after intentional output changes
-make test-golden UPDATE=true
-
-# Verify golden files match current output
-make test-golden
-```
-
-### Commit Messages
-
-Follow [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-feat(generator): add credit_card semantic generator
-fix(parser): handle quoted table names in CREATE TABLE
-test(graph): add three-node cycle detection test
-docs: update CLI reference for --tables flag
-chore: bump golangci-lint to 1.55
+go test ./... -v -count=1
 ```
 
 ---
@@ -155,10 +109,7 @@ chore: bump golangci-lint to 1.55
 
 3. **Write tests first** where possible.
 
-4. **Run the full suite** before pushing:
-   ```bash
-   make test && make lint
-   ```
+4. **Run the full suite** before pushing.
 
 5. **Fill out the PR template** completely. Incomplete PRs will be asked to revise.
 
@@ -185,11 +136,23 @@ When opening a PR, answer these questions:
 
 ## Checklist
 - [ ] Tests added or updated
-- [ ] `make test` passes
-- [ ] `make lint` passes
+- [ ] `go test ./...` passes
 - [ ] Architectural rules respected (no cross-stage imports)
-- [ ] Error messages follow SRS §12.2 format
 - [ ] Deterministic (no time.Now() in pipeline)
+```
+
+---
+
+## Commit Messages
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+feat(generator): add credit_card semantic generator
+fix(parser): handle quoted table names in CREATE TABLE
+test(graph): add three-node cycle detection test
+docs: update CLI reference for --tables flag
+chore: bump golangci-lint to 1.55
 ```
 
 ---
@@ -199,7 +162,7 @@ When opening a PR, answer these questions:
 ### Bug Reports
 
 Include:
-- SynthGraph version (`synthgraph version`)
+- SynthGraph version
 - Your OS and Go version
 - The SQL schema that caused the issue (or a minimal reproduction)
 - The exact command you ran
