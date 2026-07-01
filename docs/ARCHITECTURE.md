@@ -257,6 +257,48 @@ These rules are enforced. Violations are architectural bugs.
 
 ---
 
+## Stage Purity
+
+Every stage MUST be a pure function of its input artifact.
+
+```
+output = F(input)
+```
+
+No globals.
+No shared state.
+No file writes.
+No caches.
+No database connections.
+No randomness from system sources.
+
+**Why pure?**
+- **Testable** — a pure stage needs no mocking, no setup, no teardown.
+- **Deterministic** — same input always produces the same output.
+- **Cacheable** — outputs can be cached and reused when inputs haven't changed.
+- **Parallelizable** — independent stages can run concurrently with zero coordination.
+
+The only exception is the Parser stage, which reads a file from disk. After that, the pipeline is pure.
+
+All randomness is channeled through the seeded per-table RNG derived from `TableSeed = hash(GlobalSeed, TableName)`. No stage calls `rand.Int()` or `time.Now()` directly.
+
+---
+
+## Artifact Invariants
+
+Each pipeline artifact has a well-defined invariant. A stage may assume its input satisfies the invariant and must guarantee its output satisfies its own.
+
+| Artifact | Invariant | Produced By |
+|---|---|---|
+| `AST` | Represents exactly what the source parser produced. No transformations applied. | Parser |
+| `schema.Model` | Types are canonical. Enum references resolved. FK targets verified to exist. No duplicate tables or columns. Internally consistent. | Translator (`build()`) |
+| `SchemaGraph` | Every table has exactly one node. Every FK has exactly one directed edge. Self-referencing FKs are self-loop edges. Edge nullability recorded. No duplicate edges. | Graph Builder |
+| `GenerationPlan` | Generation order is finalized. Cycles are identified. Each cycle has a resolution strategy (nullable breakpoint or error). Deferred FKs are enumerated. | Planner |
+| `Dataset` | Row count per table matches plan. PK values are unique per table. FK values reference existing rows. Unique constraints hold. Serial columns are sequential. Deferred FK columns are NULL. | Generator |
+| `ValidatedDataset` | All constraints verified: PK uniqueness, FK referential integrity, unique constraints, enum values, NOT NULL, length limits. Safe to export. | Post-generation Validator |
+
+---
+
 ## Error Types
 
 ```go

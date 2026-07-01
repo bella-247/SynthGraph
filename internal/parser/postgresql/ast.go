@@ -2,7 +2,7 @@
 // for PostgreSQL DDL statements.
 //
 // This package has zero external dependencies. The translator operates on these
-// types and produces a *schema.Schema. The adapter (adapter.go) converts from
+// types and produces a *schema.Model. The adapter (adapter.go) converts from
 // pg_query_go's protobuf AST to these types, isolating the CGO dependency.
 package postgresql
 
