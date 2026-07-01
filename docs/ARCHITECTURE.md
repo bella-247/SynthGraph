@@ -19,10 +19,15 @@ synthgraph/
 │   │
 │   ├── parser/
 │   │   ├── parser.go                # SchemaParser interface definition
-│   │   ├── postgres/
+│   │   ├── postgresql/
 │   │   │   ├── parser.go            # PostgreSQL parser wrapping pg_query_go
-│   │   │   ├── translator.go        # Translate PostgreSQL AST to schema.Model
-│   │   │   └── translator_test.go
+│   │   │   ├── ast.go               # PostgreSQL AST types
+│   │   │   ├── types.go             # Type mapping utilities
+│   │   │   ├── translate.go         # Pipeline orchestrator (extract → normalize → link → validate → build)
+│   │   │   ├── normalize.go         # Stage 2: type canonicalization
+│   │   │   ├── link.go              # Stage 3: FK and enum cross-reference resolution
+│   │   │   ├── validate.go          # Stage 4: schema consistency validation
+│   │   │   └── translate_test.go
 │   │   └── registry.go              # Auto-detect parser by file extension
 │   │
 │   ├── graph/
@@ -115,62 +120,76 @@ synthgraph/
 
 ## Pipeline Data Flow
 
+Every stage consumes one typed artifact and produces another. Stages after the parser never see dialect-specific types — only `schema.Model`.
+
 ```
 CLI flags
     │
     ▼
-[Parser Registry]
+[Parser Registry]                    internal/parser/registry.go
     │  detects format by file extension (.sql → PostgreSQL)
     │
     ▼
-[PostgreSQL Parser]                  internal/parser/postgres/parser.go
+[PostgreSQL Parser]                  internal/parser/postgresql/parser.go
     │  calls pg_query_go.Parse()
-    │  gets PostgreSQL AST
+    │  returns PostgreSQL AST
+    │
+    ▼   ── PostgreSQL AST (pg_query_go types) ──
     │
     ▼
-[AST Translator]                     internal/parser/postgres/translator.go
-    │  walks PostgreSQL AST
-    │  maps to schema.Model (tables, columns, constraints)
+[Translator Internal Pipeline]       internal/parser/postgresql/translate.go
+    │
+    │  1. Extract → raw table state from AST (newTranslator)
+    │  2. Normalize → canonical types, resolve SERIAL, set nullability (normalize.go)
+    │  3. Link → resolve FK targets, connect enums (link.go)
+    │  4. Validate → check consistency, detect duplicates (validate.go)
+    │  5. Build → deduplicate, mark PK cols, produce final output (build in translate.go)
+    │
     │  returns *schema.Model
+    │
+    ▼   ── schema.Model (parser-agnostic) ──
     │
     ▼
 [Graph Builder]                      internal/graph/builder.go
-    │  tables → nodes
-    │  foreign keys → edges
+    │  tables → nodes, foreign keys → edges
     │  returns *SchemaGraph
     │
-    ▼
-[Topological Sort]                   internal/graph/topo.go
-    │  Kahn's algorithm
-    │  returns ordered tables + cycle members
+    ▼   ── SchemaGraph ──
     │
     ▼
-[Cycle Detector]                     internal/graph/cycles.go
-    │  Tarjan's SCC on cycle members
-    │  identifies nullable breakpoints
+[Topological Sort + Cycle Detection] internal/graph/topo.go, cycles.go
+    │  Kahn's algorithm + Tarjan's SCC
+    │  returns ordered tables + cycle members + nullable breakpoints
+    │
+    ▼   ── ordered graph ──
     │
     ▼
 [Planner]                            internal/planner/
-    │  builds TablePlan list
-    │  records DeferredFKs
-    │  returns *Plan
+    │  builds TablePlan list, records DeferredFKs
+    │  returns *GenerationPlan
+    │
+    ▼   ── GenerationPlan ──
     │
     ▼
 [Generator Engine]                   internal/generator/engine.go
     │  iterates TablePlans
-    │  resolves GeneratorFunc per column
+    │  resolves GeneratorFunc per column (seeded per-table RNG)
     │  enforces PK/unique via value pools
     │  selects FK values from generated PK pools
     │  returns *Dataset
     │
+    ▼   ── Dataset ──
+    │
     ▼
-[Validator]                          internal/validator/
-    │  checks all constraints
+[Post-generation Validator]          internal/validator/
+    │  checks all constraints (FK, PK, unique, enum, NOT NULL, length)
     │  returns []ValidationError (empty = pass)
+    │
+    ▼   ── Validated Dataset ──
     │
     ▼
 [Exporter]                           internal/exporter/
-    │  SQL or CSV
+    │  SQL INSERT or CSV
     │  writes to io.Writer
     │
     ▼
@@ -228,7 +247,7 @@ These rules are enforced. Violations are architectural bugs.
 |---|---|---|
 | `schema` | stdlib only | anything internal |
 | `parser/*` | `schema`, stdlib | `graph`, `generator`, `validator`, `exporter` |
-| `parser/postgres` | `schema`, stdlib, `pg_query_go` | nothing (parser-specific layer) |
+| `parser/postgresql` | `schema`, stdlib, `pg_query_go` | nothing (parser-specific layer) |
 | `graph` | `schema`, stdlib | `parser`, `generator`, `validator`, `exporter` |
 | `planner` | `schema`, `graph`, stdlib | `parser`, `generator`, `validator`, `exporter` |
 | `generator` | `schema`, `planner`, stdlib | `parser`, `graph`, `validator`, `exporter` |

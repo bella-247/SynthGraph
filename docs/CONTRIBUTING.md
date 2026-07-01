@@ -89,7 +89,7 @@ These require no deep architectural knowledge.
 ### Hard — Requires Deep Architecture Knowledge
 
 - **Add a new schema parser (MySQL, SQLite, Prisma)**
-  Implement the `SchemaParser` interface by wrapping an existing parser library (e.g., `vitess` for MySQL) and writing a translator from that AST to `schema.Model`. See `internal/parser/postgres/translator.go` as the pattern. The graph engine and rest of SynthGraph require zero changes — they're parser-agnostic.
+  Implement the `SchemaParser` interface by wrapping an existing parser library (e.g., `vitess` for MySQL) and writing a translator from that AST to `schema.Model`. See `internal/parser/postgresql/translator.go` as the pattern. The graph engine and rest of SynthGraph require zero changes — they're parser-agnostic.
 
 - **Implement CHECK constraint enforcement**
   This requires an expression evaluator inside the generator. Discuss in an issue before starting.
