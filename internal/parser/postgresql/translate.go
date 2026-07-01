@@ -154,8 +154,8 @@ func extractTableConstraints(stmt CreateTableStmt, existingPK []string, existing
 				Columns:    tc.Columns,
 				RefTable:   tc.RefTable,
 				RefColumns: tc.RefColumns,
-				OnDelete:   strings.ToUpper(tc.OnDelete),
-				OnUpdate:   strings.ToUpper(tc.OnUpdate),
+				OnDelete:   schema.FKAction(tc.OnDelete),
+				OnUpdate:   schema.FKAction(tc.OnUpdate),
 			})
 
 		case ConstraintUnique:

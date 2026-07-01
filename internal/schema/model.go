@@ -39,11 +39,22 @@ type Column struct {
 	IsPrimaryKey bool    `json:"is_primary_key"`
 }
 
+// FKAction represents a foreign key action (ON DELETE / ON UPDATE).
+type FKAction string
+
+const (
+	FKNoAction   FKAction = "NO ACTION"
+	FKCascade    FKAction = "CASCADE"
+	FKRestrict   FKAction = "RESTRICT"
+	FKSetNull    FKAction = "SET NULL"
+	FKSetDefault FKAction = "SET DEFAULT"
+)
+
 // ForeignKey represents a foreign key constraint.
 type ForeignKey struct {
 	Columns    []string `json:"columns"`
 	RefTable   string   `json:"ref_table"`
 	RefColumns []string `json:"ref_columns"`
-	OnDelete   string   `json:"on_delete,omitempty"`
-	OnUpdate   string   `json:"on_update,omitempty"`
+	OnDelete   FKAction `json:"on_delete,omitempty"`
+	OnUpdate   FKAction `json:"on_update,omitempty"`
 }
