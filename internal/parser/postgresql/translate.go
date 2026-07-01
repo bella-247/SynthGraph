@@ -1,78 +1,156 @@
 package postgresql
 
 import (
-	"fmt"
 	"strings"
 
 	"synthgraph/internal/schema"
 )
 
-// Translate converts our PostgreSQL DDL AST into the canonical schema.Schema.
+// schemaTranslator carries intermediate state through the translation pipeline.
+// Each stage (normalize → link → validate → build) transforms this state
+// toward the final immutable schema.Schema.
 //
-// This is the heart of the translator:
-//   - One function per DDL construct
-//   - Column-level PK/UNIQUE → merged into table-level constraints
-//   - SERIAL → INT/BIGINT + IsSerial flag
-//   - Defaults stored as raw strings
-//   - Names are unquoted and normalized
-func Translate(stmts []Stmt) (*schema.Schema, error) {
-	s := &schema.Schema{}
-
-	for _, stmt := range stmts {
-		switch stmt := stmt.(type) {
-		case CreateTableStmt:
-			t, err := translateCreateTable(stmt)
-			if err != nil {
-				return nil, fmt.Errorf("table %s: %w", stmt.Name, err)
-			}
-			s.Tables = append(s.Tables, *t)
-
-		case CreateEnumStmt:
-			s.Enums = append(s.Enums, schema.EnumType{
-				Name:   stmt.Name,
-				Values: stmt.Values,
-			})
-		}
-	}
-
-	return s, nil
+// This is a combined Pipeline + Builder pattern:
+//   - Pipeline: ordered stages, each with a clear contract
+//   - Builder: accumulates state, .build() produces the final object
+type schemaTranslator struct {
+	enums  map[string]*schema.EnumType
+	tables []tableBuilder
 }
 
-func translateCreateTable(stmt CreateTableStmt) (*schema.Table, error) {
-	t := &schema.Table{}
-	if stmt.Schema != "" {
-		t.Name = stmt.Schema + "." + stmt.Name
-	} else {
-		t.Name = stmt.Name
+// tableBuilder holds the intermediate state for one table during translation.
+// Constraints start as raw AST lists and are normalized/merged as the pipeline progresses.
+type tableBuilder struct {
+	name    string
+	columns []schema.Column // populated by normalize stage
+
+	// Raw column definitions from the AST — consumed by the normalize stage
+	// to resolve types, nullability, defaults, etc.
+	rawColumns    []ColumnDef
+	enumColumns   []int       // column indices that reference enums (populated by normalizer, consumed by linker)
+	fkTargetIndex []int       // table index for each FK (populated by linker, -1 = unresolved) — see link.go
+
+	// Intermediate constraint state: assembled from both column-level
+	// (e.g. inline PRIMARY KEY) and table-level (e.g. PRIMARY KEY(a,b)) definitions.
+	pkCols  []string
+	fks     []schema.ForeignKey
+	uniques [][]string
+}
+
+// Translate converts our PostgreSQL DDL AST into the canonical schema.Schema.
+//
+// The pipeline executes five stages in order:
+//
+//	 1. Extract — build initial state from []Stmt
+//	 2. Normalize — canonicalize types, merge constraints
+//	 3. Link — resolve FK and enum cross-references
+//	 4. Validate — check internal consistency
+//	 5. Build — deduplicate, mark PK columns, produce final output
+//
+// Each stage has a clear contract (see individual file docs). If any stage fails,
+// the pipeline halts and returns an error describing the violation.
+func Translate(stmts []Stmt) (*schema.Schema, error) {
+	st := newTranslator(stmts)
+	st.normalize()
+	if err := st.link(); err != nil {
+		return nil, err
+	}
+	if err := st.validate(); err != nil {
+		return nil, err
+	}
+	return st.build(), nil
+}
+
+// newTranslator initialises a schemaTranslator from the raw DDL AST.
+// This is the "Extract" stage — a pure 1:1 copy with no normalisation.
+//
+// Contract:
+//   - Every table from the AST exists in the translator.
+//   - Every enum from the AST exists in the translator.
+//   - Raw column definitions are preserved exactly as parsed.
+//   - Constraint lists are assembled from both column-level and table-level
+//     definitions but not yet deduplicated.
+//   - No information is intentionally discarded.
+func newTranslator(stmts []Stmt) *schemaTranslator {
+	st := &schemaTranslator{
+		enums: make(map[string]*schema.EnumType),
 	}
 
-	// Phase 1: extract columns
-	for _, col := range stmt.Columns {
-		c := translateColumn(col)
-		t.Columns = append(t.Columns, c)
+	for _, stmt := range stmts {
+		switch s := stmt.(type) {
+		case CreateEnumStmt:
+			et := &schema.EnumType{
+				Name:   enumKey(s.Schema, s.Name),
+				Values: s.Values,
+			}
+			st.enums[et.Name] = et
+
+		case CreateTableStmt:
+			tb := tableBuilder{
+				name:       tableName(s.Schema, s.Name),
+				rawColumns: s.Columns,
+				pkCols:     extractInlinePK(s),
+				uniques:    extractInlineUniques(s),
+			}
+			tb.fks, tb.pkCols, tb.uniques = extractTableConstraints(s, tb.pkCols, tb.uniques)
+			st.tables = append(st.tables, tb)
+		}
 	}
 
-	// Phase 2: collect column-level constraints into table-level constraints
-	var pkCols []string
-	var uniqueCols [][]string
+	return st
+}
 
+// enumKey builds a canonical enum name, schema-qualified if applicable.
+func enumKey(schema, name string) string {
+	if schema != "" {
+		return schema + "." + name
+	}
+	return name
+}
+
+// tableName builds a canonical table name, schema-qualified if applicable.
+func tableName(schema, name string) string {
+	if schema != "" {
+		return schema + "." + name
+	}
+	return name
+}
+
+// extractInlinePK collects column-level PRIMARY KEY flags into a PK column list.
+func extractInlinePK(stmt CreateTableStmt) []string {
+	var pk []string
 	for _, col := range stmt.Columns {
 		if col.IsPrimaryKey {
-			pkCols = append(pkCols, col.Name)
-		}
-		if col.IsUnique {
-			uniqueCols = append(uniqueCols, []string{col.Name})
+			pk = append(pk, col.Name)
 		}
 	}
+	return pk
+}
 
-	// Phase 3: resolve table-level constraints
+// extractInlineUniques collects column-level UNIQUE flags into unique-constraint lists.
+func extractInlineUniques(stmt CreateTableStmt) [][]string {
+	var uniques [][]string
+	for _, col := range stmt.Columns {
+		if col.IsUnique {
+			uniques = append(uniques, []string{col.Name})
+		}
+	}
+	return uniques
+}
+
+// extractTableConstraints processes table-level constraints and merges them
+// into the already-collected column-level constraint lists.
+func extractTableConstraints(stmt CreateTableStmt, existingPK []string, existingUniques [][]string) (fks []schema.ForeignKey, pkCols []string, uniques [][]string) {
+	pkCols = existingPK
+	uniques = existingUniques
+
 	for _, tc := range stmt.TableConstraints {
 		switch tc.Type {
 		case ConstraintPrimaryKey:
 			pkCols = append(pkCols, tc.Columns...)
 
 		case ConstraintForeignKey:
-			t.ForeignKeys = append(t.ForeignKeys, schema.ForeignKey{
+			fks = append(fks, schema.ForeignKey{
 				Columns:    tc.Columns,
 				RefTable:   tc.RefTable,
 				RefColumns: tc.RefColumns,
@@ -81,73 +159,14 @@ func translateCreateTable(stmt CreateTableStmt) (*schema.Table, error) {
 			})
 
 		case ConstraintUnique:
-			uniqueCols = append(uniqueCols, tc.Columns)
+			uniques = append(uniques, tc.Columns)
 
 		case ConstraintCheck:
-			// V1: parsed, stored for later use by the validator
+			// V1: parsed, available for future validation
 		}
 	}
 
-	// Phase 4: deduplicate and set
-	t.PrimaryKey = dedupe(pkCols)
-
-	// Mark PK columns in the Column struct
-	pkSet := make(map[string]bool, len(t.PrimaryKey))
-	for _, p := range t.PrimaryKey {
-		pkSet[p] = true
-	}
-	for i := range t.Columns {
-		if pkSet[t.Columns[i].Name] {
-			t.Columns[i].IsPrimaryKey = true
-		}
-	}
-
-	// Deduplicate uniques already covered by PK
-	t.Unique = dedupeUniques(uniqueCols, t.PrimaryKey)
-
-	return t, nil
-}
-
-func translateColumn(col ColumnDef) schema.Column {
-	c := schema.Column{
-		Name: col.Name,
-	}
-
-	baseType := strings.ToLower(col.Type.BaseType)
-	abstractType := NormalizeType(baseType)
-
-	// Handle SERIAL types: SERIAL4 → INT, SERIAL8 → BIGINT
-	if col.Type.IsSerial || IsSerialType(baseType) {
-		switch baseType {
-		case "bigserial", "serial8":
-			abstractType = TypeBigInt
-		case "smallserial", "serial2":
-			abstractType = TypeSmallInt
-		default:
-			abstractType = TypeInt
-		}
-	}
-
-	// Unknown type → treat as enum reference
-	if abstractType == TypeUnknown {
-		abstractType = TypeEnum
-	}
-
-	c.Type = string(abstractType)
-	if abstractType == TypeEnum {
-		c.Type = col.Type.BaseType
-	}
-
-	// Nullability: default is nullable unless NOT NULL is set
-	c.Nullable = !col.NotNull
-
-	// Default: store as raw string
-	if col.Default != "" {
-		d := col.Default
-		c.Default = &d
-	}
-
-	return c
+	return fks, pkCols, uniques
 }
 
 // dedupe removes duplicate strings preserving order.
@@ -163,7 +182,7 @@ func dedupe(s []string) []string {
 	return result
 }
 
-// dedupeUniques removes unique constraints already covered by the PK.
+// dedupeUniques removes unique constraints already covered by the primary key.
 func dedupeUniques(uniques [][]string, pk []string) [][]string {
 	pkSet := make(map[string]bool, len(pk))
 	for _, v := range pk {
@@ -195,4 +214,52 @@ func dedupeUniques(uniques [][]string, pk []string) [][]string {
 	}
 
 	return result
+}
+
+// build produces the final immutable schema.Schema from the pipeline state.
+// This is the final pipeline stage.
+//
+// Contract:
+//   - PK columns are deduplicated and marked on the Column struct.
+//   - Unique constraints that are fully covered by the PK are removed.
+//   - All remaining constraints are in final form.
+func (st *schemaTranslator) build() *schema.Schema {
+	s := &schema.Schema{}
+
+	// Collect enums
+	for _, et := range st.enums {
+		s.Enums = append(s.Enums, *et)
+	}
+
+	// Build each table
+	for _, tb := range st.tables {
+		t := &schema.Table{
+			Name:    tb.name,
+			Columns: tb.columns,
+		}
+
+		// Deduplicate PK columns (same column can appear in both inline and table-level)
+		t.PrimaryKey = dedupe(tb.pkCols)
+
+		// Mark PK columns in the Column struct
+		pkSet := make(map[string]bool, len(t.PrimaryKey))
+		for _, p := range t.PrimaryKey {
+			pkSet[p] = true
+		}
+		for i := range t.Columns {
+			if pkSet[t.Columns[i].Name] {
+				t.Columns[i].IsPrimaryKey = true
+			}
+		}
+
+		// Remove unique constraints covered by the PK
+		t.Unique = dedupeUniques(tb.uniques, t.PrimaryKey)
+
+		// Copy resolved foreign keys
+		t.ForeignKeys = tb.fks
+
+		s.Tables = append(s.Tables, *t)
+	}
+
+	return s
 }

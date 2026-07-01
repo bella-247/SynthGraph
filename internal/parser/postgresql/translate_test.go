@@ -76,7 +76,10 @@ func TestTranslate_NullableDefault(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tbl := s.Tables[0]
 
 	// name: nullable with default
@@ -98,42 +101,42 @@ func TestTranslate_NullableDefault(t *testing.T) {
 
 func TestTranslate_AllTypes(t *testing.T) {
 	types := map[string]string{
-		"int":       "int",
-		"integer":   "int",
-		"int4":      "int",
-		"bigint":    "bigint",
-		"int8":      "bigint",
-		"smallint":  "smallint",
-		"int2":      "smallint",
-		"text":      "text",
-		"varchar":   "varchar",
-		"char":      "char",
-		"boolean":   "boolean",
-		"bool":      "boolean",
-		"decimal":   "decimal",
-		"numeric":   "decimal",
-		"real":      "float",
-		"float4":    "float",
-		"float":     "float",
+		"int":              "int",
+		"integer":          "int",
+		"int4":             "int",
+		"bigint":           "bigint",
+		"int8":             "bigint",
+		"smallint":         "smallint",
+		"int2":             "smallint",
+		"text":             "text",
+		"varchar":          "varchar",
+		"char":             "char",
+		"boolean":          "boolean",
+		"bool":             "boolean",
+		"decimal":          "decimal",
+		"numeric":          "decimal",
+		"real":             "float",
+		"float4":           "float",
+		"float":            "float",
 		"double precision": "double",
-		"float8":    "double",
-		"date":      "date",
-		"time":      "time",
-		"timestamp": "timestamp",
-		"timestamptz": "timestamp",
-		"uuid":      "uuid",
-		"json":      "json",
-		"jsonb":     "jsonb",
-		"bytea":     "bytea",
-		"interval":  "interval",
-		"inet":      "text",
-		"cidr":      "text",
-		"macaddr":   "text",
-		"citext":    "text",
-		"name":      "text",
-		"bpchar":    "char",
+		"float8":           "double",
+		"date":             "date",
+		"time":             "time",
+		"timestamp":        "timestamp",
+		"timestamptz":      "timestamp",
+		"uuid":             "uuid",
+		"json":             "json",
+		"jsonb":            "jsonb",
+		"bytea":            "bytea",
+		"interval":         "interval",
+		"inet":             "text",
+		"cidr":             "text",
+		"macaddr":          "text",
+		"citext":           "text",
+		"name":             "text",
+		"bpchar":           "char",
 		"character varying": "varchar",
-		"character": "char",
+		"character":        "char",
 	}
 
 	var cols []ColumnDef
@@ -153,7 +156,6 @@ func TestTranslate_AllTypes(t *testing.T) {
 
 	tbl := s.Tables[0]
 	for _, c := range tbl.Columns {
-		// Extract the pg type name from the column name
 		pgName := strings.TrimPrefix(c.Name, "c")
 		pgName = strings.ReplaceAll(pgName, "_", " ")
 		expectedType := types[pgName]
@@ -175,7 +177,10 @@ func TestTranslate_SerialTypes(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tbl := s.Tables[0]
 
 	tests := []struct {
@@ -208,7 +213,10 @@ func TestTranslate_CompositePrimaryKey(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tbl := s.Tables[0]
 
 	expected := []string{"order_id", "product_id"}
@@ -218,7 +226,6 @@ func TestTranslate_CompositePrimaryKey(t *testing.T) {
 }
 
 func TestTranslate_InlineAndTablePK(t *testing.T) {
-	// Both inline PK and table-level PK should merge without duplicates
 	stmts := []Stmt{
 		CreateTableStmt{
 			Name: "t",
@@ -232,7 +239,10 @@ func TestTranslate_InlineAndTablePK(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tbl := s.Tables[0]
 
 	if !reflect.DeepEqual(tbl.PrimaryKey, []string{"a", "b"}) {
@@ -242,6 +252,12 @@ func TestTranslate_InlineAndTablePK(t *testing.T) {
 
 func TestTranslate_ForeignKey(t *testing.T) {
 	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "users",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+			},
+		},
 		CreateTableStmt{
 			Name: "orders",
 			Columns: []ColumnDef{
@@ -260,8 +276,11 @@ func TestTranslate_ForeignKey(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
-	tbl := s.Tables[0]
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tbl := s.Tables[1] // orders is second
 
 	if len(tbl.ForeignKeys) != 1 {
 		t.Fatalf("expected 1 FK, got %d", len(tbl.ForeignKeys))
@@ -288,6 +307,16 @@ func TestTranslate_ForeignKey(t *testing.T) {
 func TestTranslate_CompositeForeignKey(t *testing.T) {
 	stmts := []Stmt{
 		CreateTableStmt{
+			Name: "order_items",
+			Columns: []ColumnDef{
+				{Name: "order_id", Type: ColumnType{BaseType: "int"}, NotNull: true},
+				{Name: "product_id", Type: ColumnType{BaseType: "int"}, NotNull: true},
+			},
+			TableConstraints: []TableConstraint{
+				{Type: ConstraintPrimaryKey, Columns: []string{"order_id", "product_id"}},
+			},
+		},
+		CreateTableStmt{
 			Name: "order_details",
 			Columns: []ColumnDef{
 				{Name: "order_id", Type: ColumnType{BaseType: "int"}, NotNull: true},
@@ -308,8 +337,11 @@ func TestTranslate_CompositeForeignKey(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
-	tbl := s.Tables[0]
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tbl := s.Tables[1] // order_details is second
 
 	if len(tbl.ForeignKeys) != 1 {
 		t.Fatalf("expected 1 FK, got %d", len(tbl.ForeignKeys))
@@ -334,6 +366,7 @@ func TestTranslate_UniqueConstraints(t *testing.T) {
 			Columns: []ColumnDef{
 				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
 				{Name: "email", Type: ColumnType{BaseType: "varchar"}, IsUnique: true, NotNull: true},
+				{Name: "username", Type: ColumnType{BaseType: "varchar"}, NotNull: true},
 			},
 			TableConstraints: []TableConstraint{
 				{Type: ConstraintUnique, Columns: []string{"username"}},
@@ -341,7 +374,10 @@ func TestTranslate_UniqueConstraints(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tbl := s.Tables[0]
 
 	// email appears twice (inline + table-level), should be deduped
@@ -366,7 +402,10 @@ func TestTranslate_CompositeUnique(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tbl := s.Tables[0]
 
 	expected := [][]string{{"user_id", "product_id"}}
@@ -376,8 +415,6 @@ func TestTranslate_CompositeUnique(t *testing.T) {
 }
 
 func TestTranslate_UniqueCoveredByPK(t *testing.T) {
-	// If a unique constraint is on the same columns as the PK,
-	// it should be omitted since PK implies uniqueness.
 	stmts := []Stmt{
 		CreateTableStmt{
 			Name: "t",
@@ -389,7 +426,10 @@ func TestTranslate_UniqueCoveredByPK(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tbl := s.Tables[0]
 
 	if len(tbl.Unique) != 0 {
@@ -409,8 +449,17 @@ func TestTranslate_ForeignKeyActions(t *testing.T) {
 		{"NO ACTION", "NO ACTION"},
 	}
 
+	// Parent table referenced by all FK action variants
+	parent := CreateTableStmt{
+		Name: "parent",
+		Columns: []ColumnDef{
+			{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+		},
+	}
+
 	for _, a := range actions {
 		stmts := []Stmt{
+			parent, // referenced table
 			CreateTableStmt{
 				Name: "child",
 				Columns: []ColumnDef{
@@ -428,8 +477,11 @@ func TestTranslate_ForeignKeyActions(t *testing.T) {
 				},
 			},
 		}
-		s, _ := Translate(stmts)
-		fk := s.Tables[0].ForeignKeys[0]
+		s, err := Translate(stmts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fk := s.Tables[1].ForeignKeys[0]
 		if fk.OnDelete != a.want {
 			t.Errorf("OnDelete: expected %q, got %q", a.want, fk.OnDelete)
 		}
@@ -454,7 +506,10 @@ func TestTranslate_SelfReferencingFK(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tbl := s.Tables[0]
 
 	if len(tbl.ForeignKeys) != 1 {
@@ -468,6 +523,12 @@ func TestTranslate_SelfReferencingFK(t *testing.T) {
 
 func TestTranslate_MultipleForeignKeys(t *testing.T) {
 	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "users",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+			},
+		},
 		CreateTableStmt{
 			Name: "posts",
 			Columns: []ColumnDef{
@@ -491,8 +552,11 @@ func TestTranslate_MultipleForeignKeys(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
-	tbl := s.Tables[0]
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tbl := s.Tables[1] // posts is second
 
 	if len(tbl.ForeignKeys) != 2 {
 		t.Fatalf("expected 2 FKs, got %d", len(tbl.ForeignKeys))
@@ -513,7 +577,10 @@ func TestTranslate_EnumType(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(s.Enums) != 1 {
 		t.Fatalf("expected 1 enum type, got %d", len(s.Enums))
@@ -525,7 +592,6 @@ func TestTranslate_EnumType(t *testing.T) {
 		t.Errorf("enum values: got %v", s.Enums[0].Values)
 	}
 
-	// Column referencing enum should have type "mood"
 	tbl := s.Tables[0]
 	if tbl.Columns[1].Type != "mood" {
 		t.Errorf("enum column type: expected 'mood', got %q", tbl.Columns[1].Type)
@@ -542,7 +608,10 @@ func TestTranslate_SchemaQualifiedName(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if s.Tables[0].Name != "billing.invoices" {
 		t.Errorf("expected 'billing.invoices', got %q", s.Tables[0].Name)
@@ -559,7 +628,10 @@ func TestTranslate_NoConstraints(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tbl := s.Tables[0]
 
 	if len(tbl.PrimaryKey) != 0 {
@@ -575,7 +647,6 @@ func TestTranslate_NoConstraints(t *testing.T) {
 		t.Errorf("expected 2 columns, got %d", len(tbl.Columns))
 	}
 
-	// Both should be nullable (no NOT NULL)
 	if !tbl.Columns[0].Nullable || !tbl.Columns[1].Nullable {
 		t.Error("expected both columns to be nullable")
 	}
@@ -675,7 +746,10 @@ func TestTranslate_NamedConstraints(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tbl := s.Tables[0]
 
 	if !reflect.DeepEqual(tbl.PrimaryKey, []string{"id"}) {
@@ -698,7 +772,10 @@ func TestTranslate_DefaultExpressions(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tbl := s.Tables[0]
 
 	expectedDefaults := []struct {
@@ -727,7 +804,6 @@ func TestTranslate_DefaultExpressions(t *testing.T) {
 }
 
 func TestTranslate_OverlapUnique(t *testing.T) {
-	// Unique constraint on PK columns should be removed
 	stmts := []Stmt{
 		CreateTableStmt{
 			Name: "t",
@@ -740,10 +816,12 @@ func TestTranslate_OverlapUnique(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tbl := s.Tables[0]
 
-	// "id" is PK, "version" is not. So the composite (id, version) should remain
 	if len(tbl.Unique) != 1 {
 		t.Errorf("expected 1 unique, got %d: %v", len(tbl.Unique), tbl.Unique)
 	}
@@ -774,7 +852,10 @@ func TestTranslate_MultipleTablesWithFK(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if len(s.Tables) != 2 {
 		t.Fatalf("expected 2 tables, got %d", len(s.Tables))
@@ -783,7 +864,6 @@ func TestTranslate_MultipleTablesWithFK(t *testing.T) {
 		t.Errorf("unexpected table order: %q, %q", s.Tables[0].Name, s.Tables[1].Name)
 	}
 
-	// orders should have an FK
 	if len(s.Tables[1].ForeignKeys) != 1 {
 		t.Errorf("orders: expected 1 FK, got %d", len(s.Tables[1].ForeignKeys))
 	}
@@ -800,25 +880,24 @@ func TestTranslate_NotNullAndDefault(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tbl := s.Tables[0]
 
-	// id: PK + NOT NULL → not nullable (PK implies NOT NULL, but our model tracks it)
 	if tbl.Columns[0].Nullable {
 		t.Error("id should not be nullable")
 	}
-	// name: no constraints → nullable
 	if !tbl.Columns[1].Nullable {
 		t.Error("name should be nullable")
 	}
-	// email: NOT NULL → not nullable
 	if tbl.Columns[2].Nullable {
 		t.Error("email should not be nullable")
 	}
 }
 
 func TestTranslate_UnknownTypeBecomesEnum(t *testing.T) {
-	// An unrecognized type should be treated as an enum reference
 	stmts := []Stmt{
 		CreateTableStmt{
 			Name: "t",
@@ -827,7 +906,10 @@ func TestTranslate_UnknownTypeBecomesEnum(t *testing.T) {
 			},
 		},
 	}
-	s, _ := Translate(stmts)
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tbl := s.Tables[0]
 
 	if tbl.Columns[0].Type != "order_status" {

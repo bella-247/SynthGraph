@@ -174,7 +174,7 @@ func convertTypeName(typeName *pg_query.TypeName) ColumnType {
 	parts := make([]string, 0, len(typeName.Names))
 	for _, n := range typeName.Names {
 		if s, ok := n.Node.(*pg_query.Node_String_); ok {
-			parts = append(parts, s.String_)
+			parts = append(parts, s.String_.Sval)
 		}
 	}
 
@@ -209,7 +209,7 @@ func extractNames(nodes []*pg_query.Node) []string {
 	result := make([]string, 0, len(nodes))
 	for _, n := range nodes {
 		if s, ok := n.Node.(*pg_query.Node_String_); ok {
-			result = append(result, s.String_)
+			result = append(result, s.String_.Sval)
 		}
 	}
 	return result
@@ -226,8 +226,8 @@ func nodeToDefaultString(node *pg_query.Node) string {
 			return fmt.Sprintf("%d", v.Ival.Ival)
 		case *pg_query.A_Const_Sval:
 			return fmt.Sprintf("'%s'", v.Sval.Sval)
-		case *pg_query.A_Const_Bval:
-			if v.Bval.Bval {
+		case *pg_query.A_Const_Boolval:
+			if v.Boolval.Boolval {
 				return "true"
 			}
 			return "false"
@@ -236,14 +236,26 @@ func nodeToDefaultString(node *pg_query.Node) string {
 		parts := make([]string, 0, len(n.FuncCall.Funcname))
 		for _, p := range n.FuncCall.Funcname {
 			if s, ok := p.Node.(*pg_query.Node_String_); ok {
-				parts = append(parts, s.String_)
+				parts = append(parts, s.String_.Sval)
 			}
 		}
 		if len(parts) > 0 {
 			return strings.Join(parts, ".") + "()"
 		}
 	case *pg_query.Node_TypeCast:
-		return pg_query.Deparse(node)
+		result, err := pg_query.Deparse(&pg_query.ParseResult{
+			Stmts: []*pg_query.RawStmt{{Stmt: node}},
+		})
+		if err != nil {
+			return ""
+		}
+		return result
 	}
-	return pg_query.Deparse(node)
+	result, err := pg_query.Deparse(&pg_query.ParseResult{
+		Stmts: []*pg_query.RawStmt{{Stmt: node}},
+	})
+	if err != nil {
+		return ""
+	}
+	return result
 }
