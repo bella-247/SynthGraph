@@ -62,8 +62,8 @@ func TestTranslate_SingleTable(t *testing.T) {
 	}
 
 	// Check not-null propagated
-	if !tbl.Columns[1].Nullable {
-		t.Error("expected name column to be NotNull -> Nullable=false")
+	if tbl.Columns[1].Nullable {
+		t.Error("expected name column to have Nullable=false because NotNull=true")
 	}
 
 	// Check unique preserved

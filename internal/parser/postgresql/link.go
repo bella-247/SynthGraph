@@ -14,21 +14,26 @@ package postgresql
 //     the validate stage rejects them).
 //   - Enum-type columns that match a known enum definition are noted.
 func (st *schemaTranslator) link() error {
-	// Build table name → index lookup
-	tableIndex := make(map[string]int, len(st.tables))
-	
-	for i, tb := range st.tables {
-		if _, exists := tableIndex[tb.name]; exists {
-			continue // duplicate name, will be caught by validate
-		}
-		tableIndex[tb.name] = i
-	}
+	tableIndex := st.buildTableIndex()
+	st.resolveForeignKeys(tableIndex)
+	st.resolveEnumReferences()
+	return nil
+}
 
-	// Resolve FK references (store -1 if target doesn't exist)
+func (st *schemaTranslator) buildTableIndex() map[string]int {
+	tableIndex := make(map[string]int, len(st.tables))
+	for i, tb := range st.tables {
+		if _, exists := tableIndex[tb.name]; !exists {
+			tableIndex[tb.name] = i
+		}
+	}
+	return tableIndex
+}
+
+func (st *schemaTranslator) resolveForeignKeys(tableIndex map[string]int) {
 	for ti := range st.tables {
 		tb := &st.tables[ti]
 		tb.fkTargetIndex = make([]int, len(tb.fks))
-
 		for fi, fk := range tb.fks {
 			if idx, exists := tableIndex[fk.RefTable]; exists {
 				tb.fkTargetIndex[fi] = idx
@@ -37,8 +42,9 @@ func (st *schemaTranslator) link() error {
 			}
 		}
 	}
+}
 
-	// Resolve enum references in columns (no error for unknown enums)
+func (st *schemaTranslator) resolveEnumReferences() {
 	for ti := range st.tables {
 		tb := &st.tables[ti]
 		for ci := range tb.columns {
@@ -49,6 +55,4 @@ func (st *schemaTranslator) link() error {
 			}
 		}
 	}
-
-	return nil
 }

@@ -65,8 +65,8 @@ func normalizeColumn(raw ColumnDef) schema.Column {
 		c.Type = raw.Type.BaseType
 	}
 
-	// Nullability: default is nullable unless NOT NULL is set
-	c.Nullable = !raw.NotNull
+	// Nullability: default is nullable unless NOT NULL or PRIMARY KEY is set
+	c.Nullable = !raw.NotNull && !raw.IsPrimaryKey
 
 	// Default: store as raw string
 	if raw.Default != "" {
