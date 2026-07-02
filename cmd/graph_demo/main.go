@@ -2,6 +2,8 @@
 //
 // Phase 1 — Canonical schema.Model (the intermediate representation)
 // Phase 2 — Canonical Graph (the central data structure of SynthGraph)
+// Phase 3 — JSON dump of the complete graph
+// Phase 4 — Mermaid ER diagram visualization
 //
 // Since we build the AST directly here (bypassing the SQL parser),
 // this demo works without CGO.
@@ -15,6 +17,7 @@ import (
 
 	"synthgraph/internal/graph"
 	"synthgraph/internal/parser/postgresql"
+	"synthgraph/internal/render/mermaid"
 	"synthgraph/internal/schema"
 )
 
@@ -206,6 +209,20 @@ func main() {
 
 	jsonOutput := dumpGraphAsJSON(schemaGraph)
 	fmt.Println(jsonOutput)
+
+	// ── Phase 4: Mermaid ER diagram ───────────────────────────────────────
+
+	fmt.Println(strings.Repeat("═", 72))
+	fmt.Println("PHASE 4 — MERMAID ER DIAGRAM")
+	fmt.Println(strings.Repeat("═", 72))
+	fmt.Println()
+
+	mermaidOutput, err := mermaid.Render(schemaGraph)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\nError during Mermaid rendering: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println(mermaidOutput)
 }
 
 // ── Schema summary ──────────────────────────────────────────────────────────
