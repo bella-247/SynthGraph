@@ -23,20 +23,29 @@ type EnumType struct {
 
 // Table represents a single database table with its columns and constraints.
 type Table struct {
-	Name        string        `json:"name"`
-	Columns     []Column      `json:"columns"`
-	PrimaryKey  []string      `json:"primary_key,omitempty"`
-	ForeignKeys []ForeignKey  `json:"foreign_keys,omitempty"`
-	Unique      [][]string    `json:"unique,omitempty"`
+	Name        string            `json:"name"`
+	Columns     []Column          `json:"columns"`
+	PrimaryKey  []string          `json:"primary_key,omitempty"`
+	ForeignKeys []ForeignKey      `json:"foreign_keys,omitempty"`
+	Unique      [][]string        `json:"unique,omitempty"`
+	Checks      []CheckConstraint `json:"checks,omitempty"`
 }
 
 // Column represents a single column in a table.
 type Column struct {
 	Name         string  `json:"name"`
 	Type         string  `json:"type"`
+	Length       int     `json:"length,omitempty"`    // for VARCHAR(n), DECIMAL(p,s)
+	Precision    int     `json:"precision,omitempty"` // for DECIMAL(p,s)
 	Nullable     bool    `json:"nullable"`
 	Default      *string `json:"default,omitempty"`
 	IsPrimaryKey bool    `json:"is_primary_key"`
+}
+
+// CheckConstraint represents a single CHECK constraint on a table.
+type CheckConstraint struct {
+	Name       string `json:"name,omitempty"`
+	Expression string `json:"expression"` // the raw check expression text
 }
 
 // FKAction represents a foreign key action (ON DELETE / ON UPDATE).
