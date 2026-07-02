@@ -18,12 +18,13 @@
 7. [Dependency Resolution Strategy](#7-dependency-resolution-strategy)
 8. [Constraint System](#8-constraint-system)
 9. [Data Generation Rules](#9-data-generation-rules)
-10. [Validation Rules](#10-validation-rules)
-11. [Output Formats](#11-output-formats)
-12. [Error Handling Strategy](#12-error-handling-strategy)
-13. [CLI Specification](#13-cli-specification)
-14. [Non-Functional Requirements](#14-non-functional-requirements)
-15. [V1 Scope Boundaries](#15-v1-scope-boundaries)
+10. [Translator Validator](#10-translator-validator-schema-validation)
+11. [Post-generation Validator](#11-post-generation-validator-dataset-validation)
+12. [Output Formats](#12-output-formats)
+13. [Error Handling Strategy](#13-error-handling-strategy)
+14. [CLI Specification](#14-cli-specification)
+15. [Non-Functional Requirements](#15-non-functional-requirements)
+16. [V1 Scope Boundaries](#16-v1-scope-boundaries)
 
 ---
 
@@ -92,7 +93,7 @@ V1 must be extensible by design — parser interface, exporter interface, genera
 
 ## 3. Core Pipeline Architecture
 
-The system is a strict linear pipeline. Data flows in one direction only. No stage may communicate laterally or backward.
+The system is a strict linear pipeline. Data flows in one direction only. No stage may communicate laterally or backward. Every stage consumes one typed artifact and produces another.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -101,34 +102,50 @@ The system is a strict linear pipeline. Data flows in one direction only. No sta
 │  [Schema File]                                                    │
 │       │                                                           │
 │       ▼                                                           │
-│  ┌─────────┐    Unified Internal Schema Model                    │
-│  │ PARSER  │ ─────────────────────────────────────────────────► │
-│  └─────────┘                                                      │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  PARSER (dialect-specific)  Internal pipeline:             │  │
+│  │                                                             │  │
+│  │    AST ← pg_query_go                                        │  │
+│  │      ↓                                                      │  │
+│  │    Extractor → Raw Table State                              │  │
+│  │      ↓                                                      │  │
+│  │    Normalizer → Canonical Types                             │  │
+│  │      ↓                                                      │  │
+│  │    Reference Linker → Resolved References                   │  │
+│  │      ↓                                                      │  │
+│  │    Validator → Consistency Check                            │  │
+│  │      ↓                                                      │  │
+│  │    Builder → schema.Model                                   │  │
+│  └────────────────────────────────────────────────────────────┘  │
 │       │                                                           │
 │       ▼                                                           │
 │  ┌───────────────┐                                                │
-│  │ GRAPH BUILDER │  Constructs directed graph from schema model  │
+│  │ GRAPH BUILDER │  schema.Model → SchemaGraph                   │
 │  └───────────────┘                                                │
 │       │                                                           │
 │       ▼                                                           │
 │  ┌──────────────────┐                                             │
-│  │ CONSTRAINT       │  Detects cycles, resolves ordering,        │
-│  │ PLANNER          │  builds generation plan                    │
+│  │   PLANNER        │  SchemaGraph → GenerationPlan              │
+│  │   (topological    │  Detects cycles, resolves ordering,       │
+│  │    sort + cycle   │  plans deferred FKs                       │
+│  │    detection)    │                                             │
 │  └──────────────────┘                                             │
 │       │                                                           │
 │       ▼                                                           │
 │  ┌───────────────┐                                                │
-│  │   GENERATOR   │  Produces rows respecting all constraints     │
+│  │   GENERATOR   │  GenerationPlan → Dataset                     │
+│  │                │  Produces rows respecting all constraints     │
 │  └───────────────┘                                                │
 │       │                                                           │
 │       ▼                                                           │
-│  ┌───────────────┐                                                │
-│  │   VALIDATOR   │  Verifies entire dataset before export        │
-│  └───────────────┘                                                │
+│  ┌──────────────────┐                                             │
+│  │ POST-GENERATION  │  Dataset → Validated Dataset               │
+│  │ VALIDATOR        │  Verifies entire dataset before export     │
+│  └──────────────────┘                                             │
 │       │                                                           │
 │       ▼                                                           │
 │  ┌───────────────┐                                                │
-│  │   EXPORTER    │  Writes SQL INSERT / CSV output               │
+│  │   EXPORTER    │  Validated Dataset → SQL / CSV                │
 │  └───────────────┘                                                │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -137,51 +154,48 @@ The system is a strict linear pipeline. Data flows in one direction only. No sta
 
 | Stage | Input | Output | Responsibility |
 |---|---|---|---|
-| Parser | Raw schema file | Internal Schema Model | Transform format-specific schema into unified model |
-| Graph Builder | Internal Schema Model | Schema Graph | Build directed graph of table dependencies |
-| Constraint Planner | Schema Graph | Generation Plan | Resolve order, detect cycles, plan deferred FKs |
-| Generator | Generation Plan | Raw Dataset | Produce constraint-aware values for every field |
-| Validator | Raw Dataset + Schema Model | Validated Dataset or Error | Verify all constraints are satisfied |
-| Exporter | Validated Dataset | Output File | Write SQL INSERT statements or CSV |
+| Parser | Raw schema file | `schema.Model` | Transform format-specific schema into unified model. Internally: Extract → Normalize → Link → Validate → Build |
+| Graph Builder | `schema.Model` | `SchemaGraph` | Build directed graph of table dependencies |
+| Planner | `SchemaGraph` | `GenerationPlan` | Topological sort, detect cycles, plan deferred FKs |
+| Generator | `GenerationPlan` | `Dataset` | Produce constraint-aware values for every field |
+| Post-generation Validator | `Dataset` + `schema.Model` | `ValidatedDataset` or error | Verify all constraints are satisfied |
+| Exporter | `ValidatedDataset` | Output File | Write SQL INSERT statements or CSV |
 
 ---
 
 ## 4. Supported Input Formats
 
-### 4.1 V1: Raw SQL Schema (DDL)
+### 4.1 V1: PostgreSQL SQL Schema (DDL)
 
-SynthGraph v1 supports raw SQL Data Definition Language (DDL) files. The parser must handle standard `CREATE TABLE` statements across the following databases:
+SynthGraph v1 supports PostgreSQL SQL Data Definition Language (DDL) files via `pg_query_go`, a native Go wrapper around PostgreSQL's own C parser. This ensures rock-solid compatibility with PostgreSQL DDL without the complexity of a hand-written parser.
 
-- PostgreSQL (primary target)
-- MySQL / MariaDB (secondary)
-- SQLite (tertiary)
+**Parser Implementation:**
+- Uses `pg_query_go` (github.com/pganalyze/pg_query_go) for AST generation
+- PostgreSQL parser is embedded — no runtime dependency on PostgreSQL installation
+- Supports all PostgreSQL DDL constructs that PostgreSQL 12+ supports natively
+- Five-stage internal translation pipeline: Extract → Normalize → Link → Validate → Build
+- The parser's public interface is a single `Parse()` call; the internal pipeline is an implementation detail
 
 **Supported DDL constructs in V1:**
+All PostgreSQL CREATE TABLE syntax, including:
+- Column definitions with all PostgreSQL-supported data types
+- Primary key constraints (single and composite)
+- Foreign key constraints with ON DELETE/UPDATE actions
+- Unique constraints (single and composite)
+- NOT NULL and DEFAULT clauses
+- CHECK constraints (parsed, not enforced in v1)
+- PostgreSQL-specific features: SERIAL/BIGSERIAL, GENERATED, ARRAY types, named ENUM types
 
-```sql
-CREATE TABLE table_name (
-  column_name data_type [NOT NULL] [DEFAULT value],
-  column_name data_type [UNIQUE],
-  PRIMARY KEY (column_name),
-  FOREIGN KEY (column_name) REFERENCES other_table(column_name)
-    [ON DELETE CASCADE | SET NULL | RESTRICT],
-  UNIQUE (col1, col2),          -- composite unique constraints
-  CHECK (expression)            -- basic check constraints (v1: logged, not enforced)
-);
-```
+Since the parser is PostgreSQL's own, if PostgreSQL parses it, SynthGraph v1 parses it.
 
-**Supported data types (V1):**
+**Why PostgreSQL First?**
+- PostgreSQL's parser is battle-tested on millions of queries and handles every edge case (quoted identifiers, comments, complex expressions)
+- Building a hand-written parser would delay v1 by 4-8 weeks and introduce maintenance burden
+- SynthGraph's value is not in parsing — it's in graph-based dependency resolution, constraint planning, and deterministic generation
+- Future support for MySQL, SQLite, and Prisma is trivial once the translator pattern is proven
 
-| Category | Types |
-|---|---|
-| Integer | `INT`, `INTEGER`, `BIGINT`, `SMALLINT`, `SERIAL`, `BIGSERIAL` |
-| Decimal | `DECIMAL`, `NUMERIC`, `FLOAT`, `REAL`, `DOUBLE PRECISION` |
-| Text | `VARCHAR(n)`, `TEXT`, `CHAR(n)` |
-| Boolean | `BOOLEAN`, `BOOL` |
-| Date/Time | `DATE`, `TIMESTAMP`, `TIMESTAMPTZ`, `TIME` |
-| UUID | `UUID` |
-| JSON | `JSON`, `JSONB` (generate valid empty object `{}` in v1) |
-| Enum | `ENUM('val1', 'val2')` or PostgreSQL `CREATE TYPE name AS ENUM` |
+**Data Types Supported:**
+All PostgreSQL data types are supported. SynthGraph maps them internally to abstract types (INT, BIGINT, TEXT, DECIMAL, BOOLEAN, DATE, TIMESTAMP, UUID, JSON, ENUM).
 
 ### 4.2 Parser Interface Contract
 
@@ -189,19 +203,44 @@ Every parser, regardless of format, must implement the following Go interface:
 
 ```go
 type SchemaParser interface {
-    // Parse reads the schema source and returns the unified internal model.
-    // Returns an error if the schema is malformed or unsupported.
+    // Parse reads a schema source file and returns the unified internal schema model.
+    // The parser handles all dialect-specific AST transformations internally.
     Parse(source []byte) (*schema.Model, error)
 
-    // Name returns the parser's identifier (e.g. "sql", "prisma")
+    // Name returns the parser identifier (e.g., "postgresql", "mysql", "prisma")
     Name() string
 
-    // SupportedExtensions returns file extensions this parser handles
+    // SupportedExtensions returns file extensions this parser handles (e.g., [".sql"])
     SupportedExtensions() []string
 }
+
+// V1 Implementation: PostgreSQL Parser
+// The PostgreSQL parser wraps pg_query_go's AST and translates to schema.Model.
+// Future parsers (MySQL, Prisma) implement the same interface with their own translators.
+// The rest of SynthGraph (graph builder, planner, generator, validator, exporter)
+// only ever sees schema.Model and never needs to know the source format.
 ```
 
-The SQL parser in v1 is the only implementation of this interface. The interface is defined now so that future parsers (Prisma, Drizzle) can be added without touching the pipeline.
+The PostgreSQL parser in v1 is the only implementation of this interface. The interface is defined now so that future parsers (MySQL, Prisma, Drizzle) can be added without touching the pipeline.
+
+### 4.3 Translator Internal Pipeline (within the Parser)
+
+Treating the translator as a compiler sub-pipeline maintains stage isolation even within the parser. Each sub-stage transforms the intermediate state and has no knowledge of adjacent stages' internals.
+
+**Stage 1 — Extractor**
+Consumes the PostgreSQL AST (from `pg_query_go`) and produces raw table and enum state. Preserves column definitions exactly as parsed. Assembles constraint lists from both column-level and table-level definitions. Pure 1:1 copy — no normalization, no resolution.
+
+**Stage 2 — Normalizer**
+Consumes raw table state and produces canonical column definitions. Maps PostgreSQL type names to SynthGraph abstract types (e.g., `INT4`/`INTEGER`/`INT` → `int`, `CHARACTER VARYING` → `varchar`). Resolves `SERIAL` variants to concrete integer types. Sets nullability from `NOT NULL`. Stores `DEFAULT` expressions as raw strings. No cross-references are resolved here.
+
+**Stage 3 — Reference Linker**
+Consumes canonical column definitions and resolves cross-references. Maps foreign key target table name strings to actual table indices within the schema. Connects enum-type columns to their `CREATE TYPE` definitions. Unresolvable references are marked (not yet an error — validation rejects them).
+
+**Stage 4 — Translator Validator**
+Consumes the linked intermediate state and validates schema consistency. Detects duplicate table names, duplicate column names within a table, primary key columns that do not exist, unique constraint columns that do not exist, and foreign key target columns that do not exist in the referenced table. Passing this stage means the schema is internally consistent. All violations produce specific, actionable error messages. This is **not** the Post-generation Validator — it validates the schema model itself, not the generated dataset.
+
+**Stage 5 — Builder**
+Consumes the validated intermediate state and produces the final immutable `schema.Model`. Deduplicates primary key columns (same column can appear in both inline and table-level constraint declarations). Marks PK columns on the `Column` struct. Removes unique constraints that are fully covered by the primary key. Returns the final `schema.Model` to the pipeline.
 
 ---
 
@@ -581,22 +620,65 @@ type GenerationContext struct {
     RowIndex     int              // 0-based row index being generated
     TotalRows    int              // total rows requested for this table
     GeneratedPKs map[string][]any // table → generated PK values (for FK selection)
-    Seed         int64            // global RNG seed for determinism
-    RNG          *rand.Rand       // seeded random source
+    GlobalSeed   int64            // user-supplied global RNG seed
+    TableSeed    int64            // per-table seed: hash(GlobalSeed, TableName)
+    RNG          *rand.Rand       // seeded random source, unique per table
 }
 ```
 
+**TableSeed Derivation:**
+
+Each table gets its own deterministic RNG stream derived from the global seed:
+
+```
+TableSeed = FNV-64a(GlobalSeed || "::" || TableName)
+```
+
+Where `||` denotes string concatenation. This ensures that identical seeds across different tables produce different values, while the same schema + seed always produces identical results.
+
+**Why per-table RNG instead of a single sequential stream?**
+
+1. **Deterministic generation** — Table generation order is an implementation detail that should not affect output values. With per-table RNG, changing generation order (e.g., due to planner improvements) does not change the values produced for any table.
+
+2. **Future parallel generation** — Each table can be generated independently once its dependencies are available. Per-table RNG eliminates cross-table RNG state, making parallel generation trivially safe.
+
+3. **Future caching** — If a table's schema and row count have not changed, its generated rows can be cached and reused without regenerating dependent tables (as long as FK pools remain valid).
+
+4. **Independent table generation** — Adding or removing a table from the schema does not change the generated values for any other table that does not reference it. With a single shared RNG stream, inserting a table would shift the RNG state for every subsequent table.
+
 ### 9.5 Determinism
 
-All random number generation must use a seeded `rand.Rand` instance. The seed is either user-supplied via `--seed` flag or defaults to a fixed value (`42`) for reproducibility. The same seed must produce identical output.
+All random number generation must use a seeded `rand.Rand` instance derived from `TableSeed`. The global seed is either user-supplied via `--seed` flag or defaults to a fixed value (`42`) for reproducibility. The same schema, row count, seed, and configuration must always produce identical output.
 
 ---
 
-## 10. Validation Rules
+## 10. Translator Validator (Schema Validation)
 
-Validation occurs after generation and before export. The validator receives the complete generated dataset and the Internal Schema Model. It must verify every constraint independently.
+The Translator Validator runs as Stage 4 inside the parser's internal pipeline (see §4.3). It validates the *schema model itself* — not the generated dataset. It ensures the translated model is internally consistent before it reaches the graph engine.
 
-### 10.1 Validation Checks (V1)
+### 10.1 Validation Checks
+
+**Duplicate Table Names:** Two tables with the same name in the same schema are a fatal error.
+
+**Duplicate Column Names:** Two columns with the same name within a single table are a fatal error.
+
+**Primary Key Column Existence:** Every column listed in a primary key constraint must be a real column in the table.
+
+**Unique Constraint Column Existence:** Every column listed in a unique constraint must be a real column in the table.
+
+**Foreign Key Target Existence:** Every foreign key's referenced table must exist in the schema, and every referenced column must exist in that table.
+
+### 10.2 Validation Failure Behavior
+
+On any validation failure, the translator returns a structured error with an exact description of the violation. The pipeline halts — no graph is built, no data is generated.
+
+---
+
+## 11. Post-generation Validator (Dataset Validation)
+
+The Post-generation Validator runs after generation and before export. It receives the complete generated dataset and `schema.Model`. It must verify every constraint independently.
+
+### 11.1 Validation Checks (V1)
 
 **PK Uniqueness:** For every table, assert that no two rows share the same primary key value (or combination for composite PKs).
 
@@ -610,7 +692,7 @@ Validation occurs after generation and before export. The validator receives the
 
 **Length Integrity:** For every VARCHAR(n) column, assert that no generated value exceeds n characters.
 
-### 10.2 Validation Failure Behavior
+### 11.2 Validation Failure Behavior
 
 On any validation failure:
 
@@ -637,9 +719,9 @@ If the validator fails due to an internal bug (not a schema error), the error mu
 
 ---
 
-## 11. Output Formats
+## 12. Output Formats
 
-### 11.1 Exporter Interface
+### 13.1 Exporter Interface
 
 ```go
 type Exporter interface {
@@ -649,7 +731,7 @@ type Exporter interface {
 }
 ```
 
-### 11.2 SQL INSERT Exporter (V1 — Primary)
+### 13.2 SQL INSERT Exporter (V1 — Primary)
 
 Output is a single `.sql` file containing:
 
@@ -688,19 +770,19 @@ VALUES
 COMMIT;
 ```
 
-### 11.3 CSV Exporter (V1 — Secondary)
+### 13.3 CSV Exporter (V1 — Secondary)
 
 One `.csv` file per table. File naming: `{table_name}.csv`. Header row with column names. All values properly escaped per RFC 4180.
 
-### 11.4 Output Destination
+### 12.4 Output Destination
 
 By default, output is written to stdout (for SQL) or the current directory (for CSV). The `--output` flag specifies an output file path (SQL) or directory (CSV).
 
 ---
 
-## 12. Error Handling Strategy
+## 13. Error Handling Strategy
 
-### 12.1 Error Categories
+### 13.1 Error Categories
 
 | Category | Description | Exit Code |
 |---|---|---|
@@ -712,7 +794,7 @@ By default, output is written to stdout (for SQL) or the current directory (for 
 | I/O Error | File not found, permission denied, write failure | 6 |
 | Internal Error | Unexpected state — always prompts bug report | 99 |
 
-### 12.2 Error Message Format
+### 13.2 Error Message Format
 
 All errors follow a consistent structured format:
 
@@ -726,7 +808,7 @@ Error: [Short description of what failed]
   [How to fix it — actionable suggestion when possible]
 ```
 
-### 12.3 Warning System
+### 13.3 Warning System
 
 Non-fatal issues are printed as warnings to stderr before generation begins:
 
@@ -738,9 +820,9 @@ Warning: CHECK constraint on "orders.amount" will not be enforced in v1.
 
 ---
 
-## 13. CLI Specification
+## 14. CLI Specification
 
-### 13.1 Commands
+### 14.1 Commands
 
 #### `synthgraph generate`
 
@@ -795,6 +877,7 @@ Isolated Tables:    2 (audit_logs, feature_flags)
 Cycle Details:
   Cycle 1: users → organizations → users
   Breakpoint: organizations.owner_id (nullable) ✓
+  Resolution: nullable deferred insertion
 
 Generation Order:
   1. feature_flags
@@ -803,6 +886,12 @@ Generation Order:
   4. organizations  [deferred FK: owner_id]
   5. products
   ...
+
+Generation Plan:
+  Tables:             12
+  Deferred FKs:       1 (organizations.owner_id → users.id)
+  Total rows:         1,200
+  Estimated order:    shown above
 
 Warnings:
   - CHECK constraint on orders.amount will not be enforced (v1 limitation)
@@ -819,7 +908,7 @@ synthgraph version
 → SynthGraph v1.0.0
 ```
 
-### 13.2 Exit Codes
+### 16.2 Exit Codes
 
 | Code | Meaning |
 |---|---|
@@ -834,32 +923,32 @@ synthgraph version
 
 ---
 
-## 14. Non-Functional Requirements
+## 15. Non-Functional Requirements
 
-### 14.1 Performance
+### 15.1 Performance
 
 - Must generate 100 rows per table for schemas with up to 50 tables in under 5 seconds on standard developer hardware
 - Must generate 1,000 rows per table for schemas with up to 20 tables in under 10 seconds
 - Memory usage must not exceed 512MB for any supported workload in v1
 
-### 14.2 Determinism
+### 16.2 Determinism
 
 - Identical inputs (schema + row count + seed) must always produce identical outputs
 - The `--seed` flag controls all randomness in the system
 - No system time, process ID, or other non-deterministic state may influence output values (timestamps are generated from the seeded RNG, not from `time.Now()`)
 
-### 14.3 Correctness Guarantee
+### 15.3 Correctness Guarantee
 
 - Every dataset produced by SynthGraph must pass its own internal validator
 - If the validator ever fails on internally generated data, it is treated as a critical bug, not a user error
 
-### 14.4 Portability
+### 15.4 Portability
 
 - SynthGraph must compile and run on Linux, macOS, and Windows
 - No external runtime dependencies — single static binary
 - No system-level packages or shared libraries required
 
-### 14.5 Testability
+### 15.5 Testability
 
 - Every pipeline stage must be independently unit-testable
 - Golden tests must exist for the complete pipeline: schema file in, SQL file out
@@ -867,11 +956,11 @@ synthgraph version
 
 ---
 
-## 15. V1 Scope Boundaries
+## 16. V1 Scope Boundaries
 
-### 15.1 Included in V1
+### 16.1 Included in V1
 
-- Raw SQL DDL parser (PostgreSQL-compatible)
+- PostgreSQL DDL parser (via pg_query_go + translator)
 - Internal Schema Model
 - Directed schema graph construction
 - Topological sort (Kahn's algorithm)
@@ -890,7 +979,7 @@ synthgraph version
 - Exporter interface (defined, two implementations)
 - Generator registry (defined, v1 generators registered)
 
-### 15.2 Explicitly Excluded from V1
+### 16.2 Explicitly Excluded from V1
 
 - Prisma schema parser
 - Drizzle schema parser

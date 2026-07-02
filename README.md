@@ -79,8 +79,10 @@ Understand your schema's dependency graph before generating anything.
 # Download binary (Linux / macOS / Windows)
 curl -sSL https://github.com/your-org/synthgraph/releases/latest/download/install.sh | sh
 
-# Or build from source (requires Go 1.21+)
-go install github.com/your-org/synthgraph/cmd/synthgraph@latest
+# Or build from source (requires Go 1.21+ and libpq development headers)
+# macOS: brew install libpq
+# Ubuntu/Debian: sudo apt-get install libpq-dev
+# Then: go install github.com/your-org/synthgraph/cmd/synthgraph@latest
 ```
 
 ### Generate a seed file
@@ -211,6 +213,8 @@ Every FK value exists. Every email is unique. The file runs clean.
 | Circular FK dependencies | ✅ V1 |
 | CHECK constraints | ⚠️ V2 (parsed, not enforced) |
 
+**Parser Note:** SynthGraph v1 parses PostgreSQL DDL via `pg_query_go` (PostgreSQL's own parser wrapped in Go). Every constraint PostgreSQL supports is automatically supported. Future versions will add MySQL, SQLite, and Prisma support by implementing additional translators — the core engine (graph, planner, generator) remains unchanged.
+
 ---
 
 ## CLI Reference
@@ -281,23 +285,24 @@ Full architecture documentation: [docs/architecture.md](docs/architecture.md)
 ## Roadmap
 
 **V1 (Current)**
-- SQL DDL parser (PostgreSQL-compatible)
+- PostgreSQL DDL parser (via `pg_query_go`)
+- AST translator (PostgreSQL → schema.Model)
 - Graph-based dependency resolution
 - Full constraint-aware generation
 - SQL INSERT + CSV export
 - `generate` and `inspect` CLI
 
 **V2**
-- Prisma and Drizzle schema support
+- Additional schema parsers: MySQL, SQLite, Prisma (each with translator layer)
 - Statistical distributions (normal, exponential)
 - Business rule engine
 - Schema diff command
 - JSON and PostgreSQL COPY exporters
 
-**V3**
-- Web application with visual schema explorer
-- Direct database insertion mode
+**V3+**
+- Web application (reuses same core engine)
 - REST API server mode
+- Direct database insertion
 
 Full roadmap: [ROADMAP.md](ROADMAP.md)
 
@@ -309,7 +314,7 @@ Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before
 
 **Good first issues:**
 - Add a new semantic field generator
-- Improve SQL parser coverage for an edge case
+- Expand translator test coverage for a PostgreSQL edge case
 - Add a new test schema to the golden test suite
 - Improve error messages
 

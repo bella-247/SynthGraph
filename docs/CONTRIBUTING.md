@@ -18,12 +18,19 @@ Read the [Architecture document](docs/architecture.md) and the [SRS](SRS.md) bef
 - Go 1.21 or higher
 - `golangci-lint` (for linting)
 - `make` (for build targets)
+- PostgreSQL development headers (required for pg_query_go compilation)
 
 **Setup:**
 
 ```bash
 git clone https://github.com/your-org/synthgraph.git
 cd synthgraph
+
+# Install PostgreSQL dev headers (required for pg_query_go compilation)
+# macOS: brew install libpq
+# Ubuntu/Debian: sudo apt-get install libpq-dev
+# Windows: (included with PostgreSQL installer, or use WSL)
+
 go mod download
 make build
 make test
@@ -64,8 +71,9 @@ These require no deep architectural knowledge.
 - **Improve an error message**
   Find an error that isn't clear or actionable and make it better. Follow the format in SRS §12.2.
 
-- **Fix a parser edge case**
-  Find a valid SQL construct that the parser doesn't handle and add support with a test.
+- **Expand translator test coverage**
+  Test an edge case: PostgreSQL quoted identifiers, comments, complex types, etc.
+  The pg_query_go parser handles it; add a test case to the translator to verify mapping.
 
 ### Medium — Requires Understanding the Pipeline
 
@@ -80,8 +88,8 @@ These require no deep architectural knowledge.
 
 ### Hard — Requires Deep Architecture Knowledge
 
-- **Add a new schema parser**
-  Implement the `SchemaParser` interface for a new format (Prisma, Drizzle). The parser must produce the exact same `schema.Model` as the SQL parser. No pipeline changes are acceptable.
+- **Add a new schema parser (MySQL, SQLite, Prisma)**
+  Implement the `SchemaParser` interface by wrapping an existing parser library (e.g., `vitess` for MySQL) and writing a translator from that AST to `schema.Model`. See `internal/parser/postgresql/translator.go` as the pattern. The graph engine and rest of SynthGraph require zero changes — they're parser-agnostic.
 
 - **Implement CHECK constraint enforcement**
   This requires an expression evaluator inside the generator. Discuss in an issue before starting.
