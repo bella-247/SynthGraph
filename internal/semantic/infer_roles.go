@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"strconv"
 	"strings"
 
 	"synthgraph/internal/graph"
@@ -109,7 +110,7 @@ type LookupRule struct{}
 func (rule *LookupRule) Name() string { return "lookup_rule" }
 
 func (rule *LookupRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
-	tableData, isTableNode := tableNode.Data.(graph.TableData)
+	_, isTableNode := tableNode.Data.(graph.TableData)
 	if !isTableNode {
 		return nil
 	}
@@ -117,8 +118,8 @@ func (rule *LookupRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph)
 	outgoingFKCount := countEdgesFrom(tableNode.ID, graph.EdgeKindReferences, sourceGraph)
 	incomingFKCount := countEdgesTo(tableNode.ID, graph.EdgeKindReferencedBy, sourceGraph)
 	columnCount := countEdgesFrom(tableNode.ID, graph.EdgeKindContains, sourceGraph)
-	hasTemporalColumns := detectTemporalPattern(tableData, tableNode.ID, sourceGraph).HasCreatedAt ||
-		detectTemporalPattern(tableData, tableNode.ID, sourceGraph).HasUpdatedAt
+	hasTemporalColumns := detectTemporalPattern(tableNode.ID, sourceGraph).HasCreatedAt ||
+		detectTemporalPattern(tableNode.ID, sourceGraph).HasUpdatedAt
 
 	confidence := 0.0
 	evidenceLines := make([]string, 0, 4)
@@ -175,7 +176,7 @@ func (rule *TransactionalRule) Apply(tableNode *SemanticNode, sourceGraph *graph
 		return nil
 	}
 
-	temporalPattern := detectTemporalPattern(tableData, tableNode.ID, sourceGraph)
+	temporalPattern := detectTemporalPattern(tableNode.ID, sourceGraph)
 	outgoingFKCount := countEdgesFrom(tableNode.ID, graph.EdgeKindReferences, sourceGraph)
 	isJunction := hasJunctionSignal(tableData)
 
@@ -257,7 +258,7 @@ func buildForeignKeyColumnIndex(tableNodeID string, sourceGraph *graph.Graph) ma
 
 // detectTemporalPattern scans the column labels of a table to detect
 // time-tracking columns. Column names are compared case-insensitively.
-func detectTemporalPattern(tableData graph.TableData, tableNodeID string, sourceGraph *graph.Graph) TemporalPattern {
+func detectTemporalPattern(tableNodeID string, sourceGraph *graph.Graph) TemporalPattern {
 	pattern := TemporalPattern{}
 	for _, edge := range sourceGraph.Edges {
 		if edge.Kind != graph.EdgeKindContains || edge.From != tableNodeID {
@@ -312,5 +313,5 @@ func countEdgesTo(toNodeID string, kind graph.EdgeKind, sourceGraph *graph.Graph
 // countString converts an integer to its string representation. This small helper
 // keeps inline string concatenation in evidence messages readable.
 func countString(value int) string {
-	return strings.TrimSpace(strings.ReplaceAll("         ", " ", "")) // placeholder; see below
+	return strconv.Itoa(value)
 }
