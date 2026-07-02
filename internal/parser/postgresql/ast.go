@@ -2,7 +2,7 @@
 // for PostgreSQL DDL statements.
 //
 // This package has zero external dependencies. The translator operates on these
-// types and produces a *schema.Schema. The adapter (adapter.go) converts from
+// types and produces a *schema.Model. The adapter (adapter.go) converts from
 // pg_query_go's protobuf AST to these types, isolating the CGO dependency.
 package postgresql
 
@@ -26,6 +26,17 @@ type CreateTableStmt struct {
 	TableConstraints []TableConstraint
 }
 
+// FKAction represents a foreign key action (ON DELETE / ON UPDATE).
+type FKAction string
+
+const (
+	FKNoAction   FKAction = "NO ACTION"
+	FKCascade    FKAction = "CASCADE"
+	FKRestrict   FKAction = "RESTRICT"
+	FKSetNull    FKAction = "SET NULL"
+	FKSetDefault FKAction = "SET DEFAULT"
+)
+
 // ColumnDef represents a single column definition inside CREATE TABLE.
 type ColumnDef struct {
 	Name         string
@@ -35,6 +46,15 @@ type ColumnDef struct {
 	IsPrimaryKey bool   // inline PRIMARY KEY (column-level)
 	IsUnique     bool   // inline UNIQUE (column-level)
 	Comment      string
+}
+
+// DefaultExpr preserves semantic information about a default value expression.
+// In V1, defaults are stored as raw strings. This type exists for future
+// use when the generator needs to understand default expressions semantically
+// (e.g., CURRENT_TIMESTAMP → generate current time).
+type DefaultExpr struct {
+	Raw      string // the deparsed default expression as PostgreSQL renders it
+	FuncName string // non-empty if this is a function call like now(), gen_random_uuid()
 }
 
 // ColumnType represents a PostgreSQL column type.
@@ -54,8 +74,8 @@ type TableConstraint struct {
 	Columns    []string // columns involved
 	RefTable   string   // FK only
 	RefColumns []string // FK only
-	OnDelete   string   // FK only
-	OnUpdate   string   // FK only
+	OnDelete   FKAction // FK only
+	OnUpdate   FKAction // FK only
 }
 
 // ConstraintType enumerates table-level constraint types.

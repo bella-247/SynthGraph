@@ -1,7 +1,7 @@
 // Package parser defines the SchemaParser interface that all dialect-specific
 // parsers must implement.
 //
-// Every parser, regardless of format, must produce a *schema.Schema.
+// Every parser, regardless of format, must produce a *schema.Model.
 // Downstream stages (graph, planner, generator, validator, exporter)
 // never know or care about the original schema format.
 package parser
@@ -15,7 +15,7 @@ import "synthgraph/internal/schema"
 type SchemaParser interface {
 	// Parse reads a schema source and returns the unified internal model.
 	// The parser handles all dialect-specific AST transformations internally.
-	Parse(source []byte) (*schema.Schema, error)
+	Parse(source []byte) (*schema.Model, error)
 
 	// Name returns the parser identifier (e.g., "postgresql", "mysql", "prisma").
 	Name() string

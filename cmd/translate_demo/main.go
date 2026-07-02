@@ -1,5 +1,5 @@
 // Demo program: constructs DDL AST directly (no SQL parser needed)
-// and shows the translated schema.Schema output as JSON.
+// and shows the translated schema.Model output as JSON.
 package main
 
 import (
@@ -86,8 +86,8 @@ func main() {
 		},
 	}
 
-	// Translate to canonical schema
-	schema, err := postgresql.Translate(stmts)
+	// Translate to canonical schema model
+	model, err := postgresql.Translate(stmts)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -96,7 +96,7 @@ func main() {
 	// Print as pretty JSON
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(schema); err != nil {
+	if err := enc.Encode(model); err != nil {
 		fmt.Fprintf(os.Stderr, "JSON error: %v\n", err)
 		os.Exit(1)
 	}

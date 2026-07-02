@@ -8,7 +8,7 @@ import (
 
 // schemaTranslator carries intermediate state through the translation pipeline.
 // Each stage (normalize → link → validate → build) transforms this state
-// toward the final immutable schema.Schema.
+// toward the final immutable schema.Model.
 //
 // This is a combined Pipeline + Builder pattern:
 //   - Pipeline: ordered stages, each with a clear contract
@@ -37,7 +37,7 @@ type tableBuilder struct {
 	uniques [][]string
 }
 
-// Translate converts our PostgreSQL DDL AST into the canonical schema.Schema.
+// Translate converts our PostgreSQL DDL AST into the canonical schema.Model.
 //
 // The pipeline executes five stages in order:
 //
@@ -49,7 +49,7 @@ type tableBuilder struct {
 //
 // Each stage has a clear contract (see individual file docs). If any stage fails,
 // the pipeline halts and returns an error describing the violation.
-func Translate(stmts []Stmt) (*schema.Schema, error) {
+func Translate(stmts []Stmt) (*schema.Model, error) {
 	st := newTranslator(stmts)
 	st.normalize()
 	if err := st.link(); err != nil {
@@ -154,8 +154,8 @@ func extractTableConstraints(stmt CreateTableStmt, existingPK []string, existing
 				Columns:    tc.Columns,
 				RefTable:   tc.RefTable,
 				RefColumns: tc.RefColumns,
-				OnDelete:   strings.ToUpper(tc.OnDelete),
-				OnUpdate:   strings.ToUpper(tc.OnUpdate),
+				OnDelete:   schema.FKAction(tc.OnDelete),
+				OnUpdate:   schema.FKAction(tc.OnUpdate),
 			})
 
 		case ConstraintUnique:
@@ -216,19 +216,22 @@ func dedupeUniques(uniques [][]string, pk []string) [][]string {
 	return result
 }
 
-// build produces the final immutable schema.Schema from the pipeline state.
+// build produces the final immutable schema.Model from the pipeline state.
 // This is the final pipeline stage.
 //
 // Contract:
 //   - PK columns are deduplicated and marked on the Column struct.
 //   - Unique constraints that are fully covered by the PK are removed.
 //   - All remaining constraints are in final form.
-func (st *schemaTranslator) build() *schema.Schema {
-	s := &schema.Schema{}
+//   - TableMap provides O(1) lookup by table name.
+func (st *schemaTranslator) build() *schema.Model {
+	m := &schema.Model{
+		TableMap: make(map[string]*schema.Table, len(st.tables)),
+	}
 
 	// Collect enums
 	for _, et := range st.enums {
-		s.Enums = append(s.Enums, *et)
+		m.Enums = append(m.Enums, *et)
 	}
 
 	// Build each table
@@ -258,8 +261,9 @@ func (st *schemaTranslator) build() *schema.Schema {
 		// Copy resolved foreign keys
 		t.ForeignKeys = tb.fks
 
-		s.Tables = append(s.Tables, *t)
+		m.Tables = append(m.Tables, t)
+		m.TableMap[t.Name] = t
 	}
 
-	return s
+	return m
 }

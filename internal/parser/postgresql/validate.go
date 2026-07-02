@@ -2,6 +2,8 @@ package postgresql
 
 import (
 	"fmt"
+
+	"synthgraph/internal/schema"
 )
 
 // validate runs the fourth pipeline stage: consistency checking.
@@ -12,6 +14,7 @@ import (
 //   - Verify that every PK column exists in the table's column list.
 //   - Verify that every UNIQUE column exists in the table's column list.
 //   - Verify that FK target columns exist in the referenced table.
+//   - Verify that enum column types resolve to a known enum definition.
 //
 // Contract:
 //   - A passing validate means the schema is internally consistent.
@@ -21,6 +24,9 @@ func (st *schemaTranslator) validate() error {
 	// ── Duplicate table names ──────────────────────────────────────────────
 	seenTables := make(map[string]int, len(st.tables))
 	for _, tb := range st.tables {
+		if tb.name == "" {
+			return fmt.Errorf("table at index %d has empty name", len(seenTables))
+		}
 		if _, dup := seenTables[tb.name]; dup {
 			return fmt.Errorf("duplicate table name: %q", tb.name)
 		}
@@ -79,7 +85,26 @@ func (st *schemaTranslator) validate() error {
 				}
 			}
 		}
+
+		// Enum column types must resolve to a known enum definition
+		for _, col := range tb.columns {
+			if isEnumRef(col) {
+				if _, exists := st.enums[col.Type]; !exists {
+					return fmt.Errorf("table %q: column %q references undefined enum type %q",
+						tb.name, col.Name, col.Type)
+				}
+			}
+		}
 	}
 
 	return nil
+}
+
+// isEnumRef returns true if the column type looks like an enum reference
+// (not a built-in type, not empty).
+func isEnumRef(col schema.Column) bool {
+	if col.Type == "" {
+		return false
+	}
+	return NormalizeType(col.Type) == TypeUnknown
 }

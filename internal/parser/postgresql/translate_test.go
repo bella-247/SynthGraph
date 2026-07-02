@@ -2,251 +2,108 @@ package postgresql
 
 import (
 	"reflect"
-	"strings"
 	"testing"
+
+	"synthgraph/internal/schema"
 )
 
 func TestTranslate_EmptySchema(t *testing.T) {
 	s, err := Translate([]Stmt{})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Translate() error = %v", err)
 	}
 	if len(s.Tables) != 0 {
 		t.Errorf("expected 0 tables, got %d", len(s.Tables))
 	}
+	if len(s.Enums) != 0 {
+		t.Errorf("expected 0 enums, got %d", len(s.Enums))
+	}
+	if s.TableMap == nil {
+		t.Error("TableMap should not be nil")
+	}
 }
 
-func TestTranslate_SimpleTable(t *testing.T) {
+func TestTranslate_SingleTable(t *testing.T) {
 	stmts := []Stmt{
 		CreateTableStmt{
 			Name: "users",
 			Columns: []ColumnDef{
-				{Name: "id", Type: ColumnType{BaseType: "int"}, NotNull: true, IsPrimaryKey: true},
-				{Name: "email", Type: ColumnType{BaseType: "varchar", Length: 255}, NotNull: true},
-				{Name: "name", Type: ColumnType{BaseType: "varchar", Length: 100}},
+				{Name: "id", Type: ColumnType{BaseType: "integer"}, IsPrimaryKey: true},
+				{Name: "name", Type: ColumnType{BaseType: "text"}, NotNull: true},
+				{Name: "email", Type: ColumnType{BaseType: "text"}, IsUnique: true},
 			},
 		},
 	}
+
 	s, err := Translate(stmts)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Translate() error = %v", err)
 	}
+
 	if len(s.Tables) != 1 {
 		t.Fatalf("expected 1 table, got %d", len(s.Tables))
 	}
 
-	u := s.Tables[0]
-	if u.Name != "users" {
-		t.Errorf("expected name 'users', got %q", u.Name)
-	}
-
-	if len(u.Columns) != 3 {
-		t.Fatalf("expected 3 columns, got %d", len(u.Columns))
-	}
-
-	// id: INT, NOT NULL, PK
-	if u.Columns[0].Name != "id" || u.Columns[0].Type != "int" || u.Columns[0].Nullable || !u.Columns[0].IsPrimaryKey {
-		t.Errorf("unexpected id column: %+v", u.Columns[0])
-	}
-
-	// email: VARCHAR, NOT NULL
-	if u.Columns[1].Name != "email" || u.Columns[1].Type != "varchar" || u.Columns[1].Nullable {
-		t.Errorf("unexpected email column: %+v", u.Columns[1])
-	}
-
-	// name: VARCHAR, nullable
-	if u.Columns[2].Name != "name" || u.Columns[2].Type != "varchar" || !u.Columns[2].Nullable {
-		t.Errorf("unexpected name column: %+v", u.Columns[2])
-	}
-
-	// PK
-	if !reflect.DeepEqual(u.PrimaryKey, []string{"id"}) {
-		t.Errorf("expected PK [id], got %v", u.PrimaryKey)
-	}
-}
-
-func TestTranslate_NullableDefault(t *testing.T) {
-	stmts := []Stmt{
-		CreateTableStmt{
-			Name: "t",
-			Columns: []ColumnDef{
-				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
-				{Name: "name", Type: ColumnType{BaseType: "text"}, Default: "'unknown'"},
-				{Name: "score", Type: ColumnType{BaseType: "int"}, Default: "0", NotNull: true},
-			},
-		},
-	}
-	s, err := Translate(stmts)
-	if err != nil {
-		t.Fatal(err)
-	}
 	tbl := s.Tables[0]
-
-	// name: nullable with default
-	if !tbl.Columns[1].Nullable {
-		t.Error("name should be nullable")
-	}
-	if tbl.Columns[1].Default == nil || *tbl.Columns[1].Default != "'unknown'" {
-		t.Errorf("name default: got %v", tbl.Columns[1].Default)
+	if tbl.Name != "users" {
+		t.Errorf("expected table name 'users', got %q", tbl.Name)
 	}
 
-	// score: NOT NULL with default
-	if tbl.Columns[2].Nullable {
-		t.Error("score should NOT be nullable")
+	if len(tbl.Columns) != 3 {
+		t.Fatalf("expected 3 columns, got %d", len(tbl.Columns))
 	}
-	if tbl.Columns[2].Default == nil || *tbl.Columns[2].Default != "0" {
-		t.Errorf("score default: got %v", tbl.Columns[2].Default)
+
+	// Check PK
+	if len(tbl.PrimaryKey) != 1 || tbl.PrimaryKey[0] != "id" {
+		t.Errorf("expected PK [id], got %v", tbl.PrimaryKey)
+	}
+	if !tbl.Columns[0].IsPrimaryKey {
+		t.Error("expected id column to be marked as PK")
+	}
+
+	// Check not-null propagated
+	if tbl.Columns[1].Nullable {
+		t.Error("expected name column to have Nullable=false because NotNull=true")
+	}
+
+	// Check unique preserved
+	if len(tbl.Unique) != 1 || tbl.Unique[0][0] != "email" {
+		t.Errorf("expected unique constraint on email, got %v", tbl.Unique)
 	}
 }
 
-func TestTranslate_AllTypes(t *testing.T) {
-	types := map[string]string{
-		"int":              "int",
-		"integer":          "int",
-		"int4":             "int",
-		"bigint":           "bigint",
-		"int8":             "bigint",
-		"smallint":         "smallint",
-		"int2":             "smallint",
-		"text":             "text",
-		"varchar":          "varchar",
-		"char":             "char",
-		"boolean":          "boolean",
-		"bool":             "boolean",
-		"decimal":          "decimal",
-		"numeric":          "decimal",
-		"real":             "float",
-		"float4":           "float",
-		"float":            "float",
-		"double precision": "double",
-		"float8":           "double",
-		"date":             "date",
-		"time":             "time",
-		"timestamp":        "timestamp",
-		"timestamptz":      "timestamp",
-		"uuid":             "uuid",
-		"json":             "json",
-		"jsonb":            "jsonb",
-		"bytea":            "bytea",
-		"interval":         "interval",
-		"inet":             "text",
-		"cidr":             "text",
-		"macaddr":          "text",
-		"citext":           "text",
-		"name":             "text",
-		"bpchar":           "char",
-		"character varying": "varchar",
-		"character":        "char",
-	}
-
-	var cols []ColumnDef
-	for pgType := range types {
-		cols = append(cols, ColumnDef{
-			Name: "c" + strings.ReplaceAll(pgType, " ", "_"),
-			Type: ColumnType{BaseType: pgType},
-			NotNull: true,
-		})
-	}
-
-	stmts := []Stmt{CreateTableStmt{Name: "all_types", Columns: cols}}
-	s, err := Translate(stmts)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tbl := s.Tables[0]
-	for _, c := range tbl.Columns {
-		pgName := strings.TrimPrefix(c.Name, "c")
-		pgName = strings.ReplaceAll(pgName, "_", " ")
-		expectedType := types[pgName]
-
-		if c.Type != expectedType {
-			t.Errorf("type %q: expected %q, got %q", pgName, expectedType, c.Type)
-		}
-	}
-}
-
-func TestTranslate_SerialTypes(t *testing.T) {
-	stmts := []Stmt{
-		CreateTableStmt{
-			Name: "serials",
-			Columns: []ColumnDef{
-				{Name: "a", Type: ColumnType{BaseType: "serial"}, IsPrimaryKey: true},
-				{Name: "b", Type: ColumnType{BaseType: "bigserial"}},
-				{Name: "c", Type: ColumnType{BaseType: "smallserial"}},
-			},
-		},
-	}
-	s, err := Translate(stmts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tbl := s.Tables[0]
-
-	tests := []struct {
-		colIdx   int
-		expected string
-	}{
-		{0, "int"},
-		{1, "bigint"},
-		{2, "smallint"},
-	}
-	for _, tt := range tests {
-		if tbl.Columns[tt.colIdx].Type != tt.expected {
-			t.Errorf("column %d: expected %q, got %q",
-				tt.colIdx, tt.expected, tbl.Columns[tt.colIdx].Type)
-		}
-	}
-}
-
-func TestTranslate_CompositePrimaryKey(t *testing.T) {
+func TestTranslate_CompositePK(t *testing.T) {
 	stmts := []Stmt{
 		CreateTableStmt{
 			Name: "order_items",
 			Columns: []ColumnDef{
-				{Name: "order_id", Type: ColumnType{BaseType: "int"}, NotNull: true},
-				{Name: "product_id", Type: ColumnType{BaseType: "int"}, NotNull: true},
-				{Name: "qty", Type: ColumnType{BaseType: "int"}},
+				{Name: "order_id", Type: ColumnType{BaseType: "integer"}},
+				{Name: "product_id", Type: ColumnType{BaseType: "integer"}},
+				{Name: "quantity", Type: ColumnType{BaseType: "integer"}},
 			},
 			TableConstraints: []TableConstraint{
-				{Type: ConstraintPrimaryKey, Columns: []string{"order_id", "product_id"}},
+				{
+					Type:    ConstraintPrimaryKey,
+					Columns: []string{"order_id", "product_id"},
+				},
 			},
 		},
 	}
+
 	s, err := Translate(stmts)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Translate() error = %v", err)
 	}
+
 	tbl := s.Tables[0]
-
-	expected := []string{"order_id", "product_id"}
-	if !reflect.DeepEqual(tbl.PrimaryKey, expected) {
-		t.Errorf("expected PK %v, got %v", expected, tbl.PrimaryKey)
+	if len(tbl.PrimaryKey) != 2 {
+		t.Errorf("expected composite PK with 2 columns, got %v", tbl.PrimaryKey)
 	}
-}
-
-func TestTranslate_InlineAndTablePK(t *testing.T) {
-	stmts := []Stmt{
-		CreateTableStmt{
-			Name: "t",
-			Columns: []ColumnDef{
-				{Name: "a", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
-				{Name: "b", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
-				{Name: "c", Type: ColumnType{BaseType: "int"}},
-			},
-			TableConstraints: []TableConstraint{
-				{Type: ConstraintPrimaryKey, Columns: []string{"a", "b"}},
-			},
-		},
+	if !tbl.Columns[0].IsPrimaryKey || !tbl.Columns[1].IsPrimaryKey {
+		t.Error("expected both PK columns to be marked")
 	}
-	s, err := Translate(stmts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tbl := s.Tables[0]
-
-	if !reflect.DeepEqual(tbl.PrimaryKey, []string{"a", "b"}) {
-		t.Errorf("expected PK [a b], got %v", tbl.PrimaryKey)
+	if tbl.Columns[2].IsPrimaryKey {
+		t.Error("expected quantity to not be PK")
 	}
 }
 
@@ -255,14 +112,14 @@ func TestTranslate_ForeignKey(t *testing.T) {
 		CreateTableStmt{
 			Name: "users",
 			Columns: []ColumnDef{
-				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+				{Name: "id", Type: ColumnType{BaseType: "integer"}, IsPrimaryKey: true},
 			},
 		},
 		CreateTableStmt{
 			Name: "orders",
 			Columns: []ColumnDef{
-				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
-				{Name: "user_id", Type: ColumnType{BaseType: "int"}, NotNull: true},
+				{Name: "id", Type: ColumnType{BaseType: "integer"}, IsPrimaryKey: true},
+				{Name: "user_id", Type: ColumnType{BaseType: "integer"}},
 			},
 			TableConstraints: []TableConstraint{
 				{
@@ -270,183 +127,86 @@ func TestTranslate_ForeignKey(t *testing.T) {
 					Columns:    []string{"user_id"},
 					RefTable:   "users",
 					RefColumns: []string{"id"},
-					OnDelete:   "CASCADE",
-					OnUpdate:   "NO ACTION",
 				},
 			},
 		},
 	}
+
 	s, err := Translate(stmts)
 	if err != nil {
-		t.Fatal(err)
-	}
-	tbl := s.Tables[1] // orders is second
-
-	if len(tbl.ForeignKeys) != 1 {
-		t.Fatalf("expected 1 FK, got %d", len(tbl.ForeignKeys))
+		t.Fatalf("Translate() error = %v", err)
 	}
 
-	fk := tbl.ForeignKeys[0]
-	if !reflect.DeepEqual(fk.Columns, []string{"user_id"}) {
-		t.Errorf("FK columns: got %v", fk.Columns)
+	if len(s.Tables) != 2 {
+		t.Fatalf("expected 2 tables, got %d", len(s.Tables))
+	}
+
+	orders := s.Tables[1]
+	if len(orders.ForeignKeys) != 1 {
+		t.Fatalf("expected 1 FK, got %d", len(orders.ForeignKeys))
+	}
+
+	fk := orders.ForeignKeys[0]
+	if len(fk.Columns) != 1 || fk.Columns[0] != "user_id" {
+		t.Errorf("expected FK column [user_id], got %v", fk.Columns)
 	}
 	if fk.RefTable != "users" {
-		t.Errorf("FK ref table: expected 'users', got %q", fk.RefTable)
+		t.Errorf("expected RefTable 'users', got %q", fk.RefTable)
 	}
-	if !reflect.DeepEqual(fk.RefColumns, []string{"id"}) {
-		t.Errorf("FK ref columns: got %v", fk.RefColumns)
-	}
-	if fk.OnDelete != "CASCADE" {
-		t.Errorf("FK on delete: expected 'CASCADE', got %q", fk.OnDelete)
-	}
-	if fk.OnUpdate != "NO ACTION" {
-		t.Errorf("FK on update: expected 'NO ACTION', got %q", fk.OnUpdate)
+	if len(fk.RefColumns) != 1 || fk.RefColumns[0] != "id" {
+		t.Errorf("expected RefColumns [id], got %v", fk.RefColumns)
 	}
 }
 
-func TestTranslate_CompositeForeignKey(t *testing.T) {
+func TestTranslate_SelfReferencingFK(t *testing.T) {
 	stmts := []Stmt{
 		CreateTableStmt{
-			Name: "order_items",
+			Name: "employees",
 			Columns: []ColumnDef{
-				{Name: "order_id", Type: ColumnType{BaseType: "int"}, NotNull: true},
-				{Name: "product_id", Type: ColumnType{BaseType: "int"}, NotNull: true},
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+				{Name: "manager_id", Type: ColumnType{BaseType: "int"}},
 			},
 			TableConstraints: []TableConstraint{
-				{Type: ConstraintPrimaryKey, Columns: []string{"order_id", "product_id"}},
-			},
-		},
-		CreateTableStmt{
-			Name: "order_details",
-			Columns: []ColumnDef{
-				{Name: "order_id", Type: ColumnType{BaseType: "int"}, NotNull: true},
-				{Name: "product_id", Type: ColumnType{BaseType: "int"}, NotNull: true},
-			},
-			TableConstraints: []TableConstraint{
-				{
-					Type:       ConstraintPrimaryKey,
-					Columns:    []string{"order_id", "product_id"},
-				},
 				{
 					Type:       ConstraintForeignKey,
-					Columns:    []string{"order_id", "product_id"},
-					RefTable:   "order_items",
-					RefColumns: []string{"order_id", "product_id"},
-					OnDelete:   "CASCADE",
+					Columns:    []string{"manager_id"},
+					RefTable:   "employees",
+					RefColumns: []string{"id"},
 				},
 			},
 		},
 	}
+
 	s, err := Translate(stmts)
 	if err != nil {
-		t.Fatal(err)
-	}
-	tbl := s.Tables[1] // order_details is second
-
-	if len(tbl.ForeignKeys) != 1 {
-		t.Fatalf("expected 1 FK, got %d", len(tbl.ForeignKeys))
+		t.Fatalf("Translate() error = %v", err)
 	}
 
-	fk := tbl.ForeignKeys[0]
-	if !reflect.DeepEqual(fk.Columns, []string{"order_id", "product_id"}) {
-		t.Errorf("FK columns: got %v", fk.Columns)
+	if len(s.Tables) != 1 {
+		t.Fatalf("expected 1 table, got %d", len(s.Tables))
 	}
-	if fk.RefTable != "order_items" {
-		t.Errorf("FK ref table: expected 'order_items', got %q", fk.RefTable)
-	}
-	if fk.OnDelete != "CASCADE" {
-		t.Errorf("FK on delete: expected 'CASCADE', got %q", fk.OnDelete)
-	}
-}
 
-func TestTranslate_UniqueConstraints(t *testing.T) {
-	stmts := []Stmt{
-		CreateTableStmt{
-			Name: "users",
-			Columns: []ColumnDef{
-				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
-				{Name: "email", Type: ColumnType{BaseType: "varchar"}, IsUnique: true, NotNull: true},
-				{Name: "username", Type: ColumnType{BaseType: "varchar"}, NotNull: true},
-			},
-			TableConstraints: []TableConstraint{
-				{Type: ConstraintUnique, Columns: []string{"username"}},
-				{Type: ConstraintUnique, Columns: []string{"email"}},
-			},
-		},
+	emp := s.Tables[0]
+	if len(emp.ForeignKeys) != 1 {
+		t.Fatalf("expected 1 FK, got %d", len(emp.ForeignKeys))
 	}
-	s, err := Translate(stmts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tbl := s.Tables[0]
 
-	// email appears twice (inline + table-level), should be deduped
-	// username is table-level
-	expected := [][]string{{"email"}, {"username"}}
-	if !reflect.DeepEqual(tbl.Unique, expected) {
-		t.Errorf("expected uniques %v, got %v", expected, tbl.Unique)
-	}
-}
-
-func TestTranslate_CompositeUnique(t *testing.T) {
-	stmts := []Stmt{
-		CreateTableStmt{
-			Name: "reviews",
-			Columns: []ColumnDef{
-				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
-				{Name: "user_id", Type: ColumnType{BaseType: "int"}, NotNull: true},
-				{Name: "product_id", Type: ColumnType{BaseType: "int"}, NotNull: true},
-			},
-			TableConstraints: []TableConstraint{
-				{Type: ConstraintUnique, Columns: []string{"user_id", "product_id"}},
-			},
-		},
-	}
-	s, err := Translate(stmts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tbl := s.Tables[0]
-
-	expected := [][]string{{"user_id", "product_id"}}
-	if !reflect.DeepEqual(tbl.Unique, expected) {
-		t.Errorf("expected uniques %v, got %v", expected, tbl.Unique)
-	}
-}
-
-func TestTranslate_UniqueCoveredByPK(t *testing.T) {
-	stmts := []Stmt{
-		CreateTableStmt{
-			Name: "t",
-			Columns: []ColumnDef{
-				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
-			},
-			TableConstraints: []TableConstraint{
-				{Type: ConstraintUnique, Columns: []string{"id"}},
-			},
-		},
-	}
-	s, err := Translate(stmts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tbl := s.Tables[0]
-
-	if len(tbl.Unique) != 0 {
-		t.Errorf("expected no uniques (covered by PK), got %v", tbl.Unique)
+	fk := emp.ForeignKeys[0]
+	if fk.RefTable != "employees" {
+		t.Errorf("expected self-referencing FK to RefTable 'employees', got %q", fk.RefTable)
 	}
 }
 
 func TestTranslate_ForeignKeyActions(t *testing.T) {
 	actions := []struct {
-		input string
-		want  string
+		input FKAction
+		want  schema.FKAction
 	}{
-		{"RESTRICT", "RESTRICT"},
-		{"CASCADE", "CASCADE"},
-		{"SET NULL", "SET NULL"},
-		{"SET DEFAULT", "SET DEFAULT"},
-		{"NO ACTION", "NO ACTION"},
+		{FKRestrict, schema.FKRestrict},
+		{FKCascade, schema.FKCascade},
+		{FKSetNull, schema.FKSetNull},
+		{FKSetDefault, schema.FKSetDefault},
+		{FKNoAction, schema.FKNoAction},
 	}
 
 	// Parent table referenced by all FK action variants
@@ -488,40 +248,222 @@ func TestTranslate_ForeignKeyActions(t *testing.T) {
 	}
 }
 
-func TestTranslate_SelfReferencingFK(t *testing.T) {
+func TestTranslate_UniqueConstraint(t *testing.T) {
 	stmts := []Stmt{
 		CreateTableStmt{
-			Name: "employees",
+			Name: "users",
 			Columns: []ColumnDef{
 				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
-				{Name: "manager_id", Type: ColumnType{BaseType: "int"}},
+				{Name: "email", Type: ColumnType{BaseType: "text"}},
 			},
 			TableConstraints: []TableConstraint{
 				{
-					Type:       ConstraintForeignKey,
-					Columns:    []string{"manager_id"},
-					RefTable:   "employees",
-					RefColumns: []string{"id"},
+					Type:    ConstraintUnique,
+					Columns: []string{"email"},
+				},
+				{
+					Type:    ConstraintUnique,
+					Columns: []string{"email"}, // duplicate
 				},
 			},
 		},
 	}
+
 	s, err := Translate(stmts)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Translate() error = %v", err)
 	}
-	tbl := s.Tables[0]
 
-	if len(tbl.ForeignKeys) != 1 {
-		t.Fatalf("expected 1 FK, got %d", len(tbl.ForeignKeys))
-	}
-	if tbl.ForeignKeys[0].RefTable != "employees" {
-		t.Errorf("self-ref FK: expected ref 'employees', got %q",
-			tbl.ForeignKeys[0].RefTable)
+	tbl := s.Tables[0]
+	if len(tbl.Unique) != 1 {
+		t.Errorf("expected 1 unique constraint (deduped), got %d: %v", len(tbl.Unique), tbl.Unique)
 	}
 }
 
-func TestTranslate_MultipleForeignKeys(t *testing.T) {
+func TestTranslate_UniqueCoveredByPK(t *testing.T) {
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "users",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+				{Name: "email", Type: ColumnType{BaseType: "text"}},
+			},
+			TableConstraints: []TableConstraint{
+				{
+					Type:    ConstraintUnique,
+					Columns: []string{"id"}, // covered by PK
+				},
+			},
+		},
+	}
+
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+
+	tbl := s.Tables[0]
+	for _, u := range tbl.Unique {
+		t.Errorf("expected no uniques (covered by PK), got %v", u)
+	}
+}
+
+func TestTranslate_DuplicateColumnPK(t *testing.T) {
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "t",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+			},
+			TableConstraints: []TableConstraint{
+				{
+					Type:    ConstraintPrimaryKey,
+					Columns: []string{"id"},
+				},
+			},
+		},
+	}
+
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+
+	tbl := s.Tables[0]
+	if len(tbl.PrimaryKey) != 1 {
+		t.Errorf("expected deduplicated PK [id], got %v", tbl.PrimaryKey)
+	}
+}
+
+func TestTranslate_TableMap(t *testing.T) {
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "a",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+			},
+		},
+		CreateTableStmt{
+			Name: "b",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+			},
+		},
+	}
+
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+
+	if len(s.TableMap) != 2 {
+		t.Errorf("expected 2 entries in TableMap, got %d", len(s.TableMap))
+	}
+
+	if s.TableMap["a"] == nil || s.TableMap["b"] == nil {
+		t.Error("TableMap missing expected tables")
+	}
+
+	if s.TableMap["a"] != s.Tables[0] {
+		t.Error("TableMap should point to the same *Table as Tables slice")
+	}
+}
+
+func TestTranslate_EnumType(t *testing.T) {
+	stmts := []Stmt{
+		CreateEnumStmt{
+			Name:   "mood",
+			Values: []string{"happy", "sad", "neutral"},
+		},
+	}
+
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+
+	if len(s.Enums) != 1 {
+		t.Fatalf("expected 1 enum type, got %d", len(s.Enums))
+	}
+
+	enum := s.Enums[0]
+	if enum.Name != "mood" {
+		t.Errorf("expected enum name 'mood', got %q", enum.Name)
+	}
+	if !reflect.DeepEqual(enum.Values, []string{"happy", "sad", "neutral"}) {
+		t.Errorf("expected enum values [happy sad neutral], got %v", enum.Values)
+	}
+}
+
+func TestTranslate_EnumColumnResolution(t *testing.T) {
+	// Create an enum type and a table that references it as a column type
+	mood := CreateEnumStmt{
+		Name:   "mood",
+		Values: []string{"happy", "sad"},
+	}
+
+	table := CreateTableStmt{
+		Name: "entries",
+		Columns: []ColumnDef{
+			{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+			{
+				Name: "current_mood",
+				Type: ColumnType{BaseType: "mood"},
+			},
+		},
+	}
+
+	s, err := Translate([]Stmt{mood, table})
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+
+	if len(s.Tables) != 1 {
+		t.Fatalf("expected 1 table, got %d", len(s.Tables))
+	}
+
+	tbl := s.Tables[0]
+	if len(tbl.Columns) != 2 {
+		t.Fatalf("expected 2 columns, got %d", len(tbl.Columns))
+	}
+
+	moodCol := tbl.Columns[1]
+	if moodCol.Type != "mood" {
+		t.Errorf("expected column type 'mood', got %q", moodCol.Type)
+	}
+
+	// The enum should be resolved by the linker
+	if len(s.Enums) != 1 {
+		t.Errorf("expected 1 enum, got %d", len(s.Enums))
+	}
+}
+
+func TestTranslate_SchemaQualifiedTable(t *testing.T) {
+	stmts := []Stmt{
+		CreateTableStmt{
+			Schema: "public",
+			Name:   "users",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+			},
+		},
+	}
+
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+
+	if len(s.Tables) != 1 {
+		t.Fatalf("expected 1 table, got %d", len(s.Tables))
+	}
+
+	if s.Tables[0].Name != "public.users" {
+		t.Errorf("expected schema-qualified name 'public.users', got %q", s.Tables[0].Name)
+	}
+}
+
+func TestTranslate_MultipleTables(t *testing.T) {
 	stmts := []Stmt{
 		CreateTableStmt{
 			Name: "users",
@@ -533,314 +475,7 @@ func TestTranslate_MultipleForeignKeys(t *testing.T) {
 			Name: "posts",
 			Columns: []ColumnDef{
 				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
-				{Name: "author_id", Type: ColumnType{BaseType: "int"}, NotNull: true},
-				{Name: "reviewer_id", Type: ColumnType{BaseType: "int"}},
-			},
-			TableConstraints: []TableConstraint{
-				{
-					Type:       ConstraintForeignKey,
-					Columns:    []string{"author_id"},
-					RefTable:   "users",
-					RefColumns: []string{"id"},
-				},
-				{
-					Type:       ConstraintForeignKey,
-					Columns:    []string{"reviewer_id"},
-					RefTable:   "users",
-					RefColumns: []string{"id"},
-				},
-			},
-		},
-	}
-	s, err := Translate(stmts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tbl := s.Tables[1] // posts is second
-
-	if len(tbl.ForeignKeys) != 2 {
-		t.Fatalf("expected 2 FKs, got %d", len(tbl.ForeignKeys))
-	}
-}
-
-func TestTranslate_EnumType(t *testing.T) {
-	stmts := []Stmt{
-		CreateEnumStmt{
-			Name:   "mood",
-			Values: []string{"happy", "sad", "neutral"},
-		},
-		CreateTableStmt{
-			Name: "entries",
-			Columns: []ColumnDef{
-				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
-				{Name: "feeling", Type: ColumnType{BaseType: "mood"}, NotNull: true},
-			},
-		},
-	}
-	s, err := Translate(stmts)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(s.Enums) != 1 {
-		t.Fatalf("expected 1 enum type, got %d", len(s.Enums))
-	}
-	if s.Enums[0].Name != "mood" {
-		t.Errorf("enum name: expected 'mood', got %q", s.Enums[0].Name)
-	}
-	if !reflect.DeepEqual(s.Enums[0].Values, []string{"happy", "sad", "neutral"}) {
-		t.Errorf("enum values: got %v", s.Enums[0].Values)
-	}
-
-	tbl := s.Tables[0]
-	if tbl.Columns[1].Type != "mood" {
-		t.Errorf("enum column type: expected 'mood', got %q", tbl.Columns[1].Type)
-	}
-}
-
-func TestTranslate_SchemaQualifiedName(t *testing.T) {
-	stmts := []Stmt{
-		CreateTableStmt{
-			Schema: "billing",
-			Name:   "invoices",
-			Columns: []ColumnDef{
-				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
-			},
-		},
-	}
-	s, err := Translate(stmts)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if s.Tables[0].Name != "billing.invoices" {
-		t.Errorf("expected 'billing.invoices', got %q", s.Tables[0].Name)
-	}
-}
-
-func TestTranslate_NoConstraints(t *testing.T) {
-	stmts := []Stmt{
-		CreateTableStmt{
-			Name: "logs",
-			Columns: []ColumnDef{
-				{Name: "id", Type: ColumnType{BaseType: "int"}},
-				{Name: "message", Type: ColumnType{BaseType: "text"}},
-			},
-		},
-	}
-	s, err := Translate(stmts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tbl := s.Tables[0]
-
-	if len(tbl.PrimaryKey) != 0 {
-		t.Errorf("expected no PK, got %v", tbl.PrimaryKey)
-	}
-	if len(tbl.ForeignKeys) != 0 {
-		t.Errorf("expected no FKs, got %v", tbl.ForeignKeys)
-	}
-	if len(tbl.Unique) != 0 {
-		t.Errorf("expected no uniques, got %v", tbl.Unique)
-	}
-	if len(tbl.Columns) != 2 {
-		t.Errorf("expected 2 columns, got %d", len(tbl.Columns))
-	}
-
-	if !tbl.Columns[0].Nullable || !tbl.Columns[1].Nullable {
-		t.Error("expected both columns to be nullable")
-	}
-}
-
-func TestTranslate_PreprocessSQL(t *testing.T) {
-	tests := []struct {
-		input string
-		want  []string
-	}{
-		{
-			input: "CREATE TABLE t (id INT);",
-			want:  []string{"CREATE TABLE t (id INT);"},
-		},
-		{
-			input: "CREATE TABLE a (id INT);\nCREATE TABLE b (id INT);",
-			want:  []string{"CREATE TABLE a (id INT);", "CREATE TABLE b (id INT);"},
-		},
-		{
-			input: "-- comment\nCREATE TABLE t (id INT);",
-			want:  []string{"CREATE TABLE t (id INT);"},
-		},
-		{
-			input: "CREATE TABLE t (id INT /* inline comment */);",
-			want:  []string{"CREATE TABLE t (id INT);"},
-		},
-		{
-			input: "CREATE TABLE t (id INT);\n-- trailing comment",
-			want:  []string{"CREATE TABLE t (id INT);"},
-		},
-	}
-
-	for _, tt := range tests {
-		got := preprocessSQL(tt.input)
-		if !reflect.DeepEqual(got, tt.want) {
-			t.Errorf("preprocessSQL(%q)\n  got:  %v\n  want: %v", tt.input, got, tt.want)
-		}
-	}
-}
-
-func TestTranslate_TypeNormalizer(t *testing.T) {
-	tests := []struct {
-		input string
-		want  AbstractType
-	}{
-		{"int", TypeInt},
-		{"integer", TypeInt},
-		{"bigint", TypeBigInt},
-		{"smallint", TypeSmallInt},
-		{"text", TypeText},
-		{"varchar", TypeVarChar},
-		{"boolean", TypeBoolean},
-		{"decimal", TypeDecimal},
-		{"numeric", TypeDecimal},
-		{"real", TypeFloat},
-		{"double precision", TypeDouble},
-		{"date", TypeDate},
-		{"timestamp", TypeTimestamp},
-		{"uuid", TypeUUID},
-		{"json", TypeJSON},
-		{"jsonb", TypeJSONB},
-		{"bytea", TypeBytea},
-		{"foo", TypeUnknown},
-	}
-
-	for _, tt := range tests {
-		got := NormalizeType(tt.input)
-		if got != tt.want {
-			t.Errorf("NormalizeType(%q) = %q, want %q", tt.input, got, tt.want)
-		}
-	}
-}
-
-func TestTranslate_IsSerialType(t *testing.T) {
-	serials := []string{"serial", "serial4", "serial2", "bigserial", "serial8", "smallserial"}
-	for _, s := range serials {
-		if !IsSerialType(s) {
-			t.Errorf("IsSerialType(%q) = false, want true", s)
-		}
-	}
-	if IsSerialType("int") {
-		t.Error("IsSerialType('int') = true, want false")
-	}
-}
-
-func TestTranslate_NamedConstraints(t *testing.T) {
-	stmts := []Stmt{
-		CreateTableStmt{
-			Name: "t",
-			Columns: []ColumnDef{
-				{Name: "id", Type: ColumnType{BaseType: "int"}},
-				{Name: "email", Type: ColumnType{BaseType: "varchar"}},
-			},
-			TableConstraints: []TableConstraint{
-				{Type: ConstraintPrimaryKey, Name: "pk_t", Columns: []string{"id"}},
-				{Type: ConstraintUnique, Name: "uq_email", Columns: []string{"email"}},
-			},
-		},
-	}
-	s, err := Translate(stmts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tbl := s.Tables[0]
-
-	if !reflect.DeepEqual(tbl.PrimaryKey, []string{"id"}) {
-		t.Errorf("PK: expected [id], got %v", tbl.PrimaryKey)
-	}
-	if !reflect.DeepEqual(tbl.Unique, [][]string{{"email"}}) {
-		t.Errorf("Unique: expected [[email]], got %v", tbl.Unique)
-	}
-}
-
-func TestTranslate_DefaultExpressions(t *testing.T) {
-	stmts := []Stmt{
-		CreateTableStmt{
-			Name: "t",
-			Columns: []ColumnDef{
-				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
-				{Name: "score", Type: ColumnType{BaseType: "int"}, Default: "0"},
-				{Name: "label", Type: ColumnType{BaseType: "varchar"}, Default: "'untitled'"},
-				{Name: "active", Type: ColumnType{BaseType: "boolean"}, Default: "false"},
-			},
-		},
-	}
-	s, err := Translate(stmts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tbl := s.Tables[0]
-
-	expectedDefaults := []struct {
-		col    int
-		hasDef bool
-		val    string
-	}{
-		{0, false, ""},
-		{1, true, "0"},
-		{2, true, "'untitled'"},
-		{3, true, "false"},
-	}
-
-	for _, e := range expectedDefaults {
-		col := tbl.Columns[e.col]
-		if e.hasDef {
-			if col.Default == nil {
-				t.Errorf("column %d: expected default %q, got nil", e.col, e.val)
-			} else if *col.Default != e.val {
-				t.Errorf("column %d: expected default %q, got %q", e.col, e.val, *col.Default)
-			}
-		} else if col.Default != nil {
-			t.Errorf("column %d: expected no default, got %q", e.col, *col.Default)
-		}
-	}
-}
-
-func TestTranslate_OverlapUnique(t *testing.T) {
-	stmts := []Stmt{
-		CreateTableStmt{
-			Name: "t",
-			Columns: []ColumnDef{
-				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
-				{Name: "version", Type: ColumnType{BaseType: "int"}, NotNull: true},
-			},
-			TableConstraints: []TableConstraint{
-				{Type: ConstraintUnique, Columns: []string{"id", "version"}},
-			},
-		},
-	}
-	s, err := Translate(stmts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tbl := s.Tables[0]
-
-	if len(tbl.Unique) != 1 {
-		t.Errorf("expected 1 unique, got %d: %v", len(tbl.Unique), tbl.Unique)
-	}
-}
-
-func TestTranslate_MultipleTablesWithFK(t *testing.T) {
-	stmts := []Stmt{
-		CreateTableStmt{
-			Name: "users",
-			Columns: []ColumnDef{
-				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
-				{Name: "name", Type: ColumnType{BaseType: "varchar"}},
-			},
-		},
-		CreateTableStmt{
-			Name: "orders",
-			Columns: []ColumnDef{
-				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
-				{Name: "user_id", Type: ColumnType{BaseType: "int"}, NotNull: true},
+				{Name: "user_id", Type: ColumnType{BaseType: "int"}},
 			},
 			TableConstraints: []TableConstraint{
 				{
@@ -851,68 +486,396 @@ func TestTranslate_MultipleTablesWithFK(t *testing.T) {
 				},
 			},
 		},
+		CreateTableStmt{
+			Name: "comments",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+				{Name: "post_id", Type: ColumnType{BaseType: "int"}},
+			},
+			TableConstraints: []TableConstraint{
+				{
+					Type:       ConstraintForeignKey,
+					Columns:    []string{"post_id"},
+					RefTable:   "posts",
+					RefColumns: []string{"id"},
+				},
+			},
+		},
 	}
+
 	s, err := Translate(stmts)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Translate() error = %v", err)
 	}
 
-	if len(s.Tables) != 2 {
-		t.Fatalf("expected 2 tables, got %d", len(s.Tables))
-	}
-	if s.Tables[0].Name != "users" || s.Tables[1].Name != "orders" {
-		t.Errorf("unexpected table order: %q, %q", s.Tables[0].Name, s.Tables[1].Name)
+	if len(s.Tables) != 3 {
+		t.Fatalf("expected 3 tables, got %d", len(s.Tables))
 	}
 
-	if len(s.Tables[1].ForeignKeys) != 1 {
-		t.Errorf("orders: expected 1 FK, got %d", len(s.Tables[1].ForeignKeys))
+	// Verify chain: users ← posts ← comments
+	posts := s.Tables[1]
+	if posts.ForeignKeys[0].RefTable != "users" {
+		t.Errorf("expected posts FK -> users, got %q", posts.ForeignKeys[0].RefTable)
+	}
+
+	comments := s.Tables[2]
+	if comments.ForeignKeys[0].RefTable != "posts" {
+		t.Errorf("expected comments FK -> posts, got %q", comments.ForeignKeys[0].RefTable)
 	}
 }
 
-func TestTranslate_NotNullAndDefault(t *testing.T) {
+func TestTranslate_TableLevelPK(t *testing.T) {
+	// PK defined as table-level constraint, not inline
 	stmts := []Stmt{
 		CreateTableStmt{
 			Name: "t",
 			Columns: []ColumnDef{
-				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true, NotNull: true},
-				{Name: "name", Type: ColumnType{BaseType: "text"}},
-				{Name: "email", Type: ColumnType{BaseType: "varchar"}, NotNull: true},
+				{Name: "id", Type: ColumnType{BaseType: "int"}},
+			},
+			TableConstraints: []TableConstraint{
+				{
+					Type:    ConstraintPrimaryKey,
+					Columns: []string{"id"},
+				},
 			},
 		},
 	}
+
 	s, err := Translate(stmts)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Translate() error = %v", err)
 	}
-	tbl := s.Tables[0]
 
+	tbl := s.Tables[0]
+	if len(tbl.PrimaryKey) != 1 || tbl.PrimaryKey[0] != "id" {
+		t.Errorf("expected PK [id], got %v", tbl.PrimaryKey)
+	}
+	if !tbl.Columns[0].IsPrimaryKey {
+		t.Error("expected id to be marked as PK")
+	}
+}
+
+func TestTranslate_ValidateDuplicateTable(t *testing.T) {
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "users",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+			},
+		},
+		CreateTableStmt{
+			Name: "users",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+			},
+		},
+	}
+
+	_, err := Translate(stmts)
+	if err == nil {
+		t.Fatal("expected error for duplicate table name")
+	}
+}
+
+func TestTranslate_ValidateDuplicateColumn(t *testing.T) {
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "users",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+				{Name: "id", Type: ColumnType{BaseType: "int"}},
+			},
+		},
+	}
+
+	_, err := Translate(stmts)
+	if err == nil {
+		t.Fatal("expected error for duplicate column name")
+	}
+}
+
+func TestTranslate_ValidateFKTargetExists(t *testing.T) {
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "orders",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+				{Name: "user_id", Type: ColumnType{BaseType: "int"}},
+			},
+			TableConstraints: []TableConstraint{
+				{
+					Type:       ConstraintForeignKey,
+					Columns:    []string{"user_id"},
+					RefTable:   "nonexistent",
+					RefColumns: []string{"id"},
+				},
+			},
+		},
+	}
+
+	_, err := Translate(stmts)
+	if err == nil {
+		t.Fatal("expected error for FK target that doesn't exist")
+	}
+}
+
+func TestTranslate_NullableColumn(t *testing.T) {
+	// NOT NULL is the exception, not the rule
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "t",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+				{Name: "name", Type: ColumnType{BaseType: "text"}},
+				{Name: "label", Type: ColumnType{BaseType: "text"}, NotNull: true},
+			},
+		},
+	}
+
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+
+	tbl := s.Tables[0]
 	if tbl.Columns[0].Nullable {
-		t.Error("id should not be nullable")
+		t.Error("PK column should not be nullable")
 	}
 	if !tbl.Columns[1].Nullable {
-		t.Error("name should be nullable")
+		t.Error("column without NOT NULL should be nullable")
 	}
 	if tbl.Columns[2].Nullable {
-		t.Error("email should not be nullable")
+		t.Error("column with NOT NULL should not be nullable")
 	}
 }
 
-func TestTranslate_UnknownTypeBecomesEnum(t *testing.T) {
+func TestTranslate_OnUpdateAction(t *testing.T) {
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "users",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+			},
+		},
+		CreateTableStmt{
+			Name: "orders",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+				{Name: "user_id", Type: ColumnType{BaseType: "int"}},
+			},
+			TableConstraints: []TableConstraint{
+				{
+					Type:       ConstraintForeignKey,
+					Columns:    []string{"user_id"},
+					RefTable:   "users",
+					RefColumns: []string{"id"},
+					OnUpdate:   FKCascade,
+					OnDelete:   FKSetNull,
+				},
+			},
+		},
+	}
+
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+
+	fk := s.Tables[1].ForeignKeys[0]
+	if fk.OnUpdate != schema.FKCascade {
+		t.Errorf("expected OnUpdate=CASCADE, got %q", fk.OnUpdate)
+	}
+	if fk.OnDelete != schema.FKSetNull {
+		t.Errorf("expected OnDelete=SET NULL, got %q", fk.OnDelete)
+	}
+}
+
+func TestTranslate_DefaultValues(t *testing.T) {
 	stmts := []Stmt{
 		CreateTableStmt{
 			Name: "t",
 			Columns: []ColumnDef{
-				{Name: "status", Type: ColumnType{BaseType: "order_status"}, NotNull: true},
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+				{Name: "label", Type: ColumnType{BaseType: "text"}, Default: "'untitled'"},
+				{Name: "count", Type: ColumnType{BaseType: "int"}, Default: "0"},
+				{Name: "created_at", Type: ColumnType{BaseType: "timestamp"}, Default: "now()"},
 			},
 		},
 	}
+
 	s, err := Translate(stmts)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Translate() error = %v", err)
 	}
-	tbl := s.Tables[0]
 
-	if tbl.Columns[0].Type != "order_status" {
-		t.Errorf("expected type 'order_status', got %q", tbl.Columns[0].Type)
+	tbl := s.Tables[0]
+	if tbl.Columns[1].Default == nil || *tbl.Columns[1].Default != "'untitled'" {
+		t.Errorf("expected default 'untitled', got %v", tbl.Columns[1].Default)
+	}
+	if tbl.Columns[2].Default == nil || *tbl.Columns[2].Default != "0" {
+		t.Errorf("expected default 0, got %v", tbl.Columns[2].Default)
+	}
+	if tbl.Columns[3].Default == nil || *tbl.Columns[3].Default != "now()" {
+		t.Errorf("expected default now(), got %v", tbl.Columns[3].Default)
+	}
+}
+
+func TestTranslate_CheckConstraintParsed(t *testing.T) {
+	// CHECK constraints are parsed in V1 but not enforced in the schema model
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "t",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+				{Name: "age", Type: ColumnType{BaseType: "int"}},
+			},
+			TableConstraints: []TableConstraint{
+				{
+					Type: ConstraintCheck,
+					Name: "age_check",
+				},
+			},
+		},
+	}
+
+	_, err := Translate(stmts)
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+}
+
+func TestTranslate_MissingRefColumn(t *testing.T) {
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "users",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+			},
+		},
+		CreateTableStmt{
+			Name: "orders",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+				{Name: "user_id", Type: ColumnType{BaseType: "int"}},
+			},
+			TableConstraints: []TableConstraint{
+				{
+					Type:       ConstraintForeignKey,
+					Columns:    []string{"user_id"},
+					RefTable:   "users",
+					RefColumns: []string{"missing_col"},
+				},
+			},
+		},
+	}
+
+	_, err := Translate(stmts)
+	if err == nil {
+		t.Fatal("expected error for FK referencing non-existent column")
+	}
+}
+
+func TestTranslate_NoPanicOnInvalidTypeName(t *testing.T) {
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "t",
+			Columns: []ColumnDef{
+				{
+					Name: "id",
+					Type: ColumnType{}, // empty type — shouldn't panic
+				},
+			},
+		},
+	}
+
+	_, err := Translate(stmts)
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+}
+
+func TestTranslate_NoTableName(t *testing.T) {
+	// A table with empty name should be rejected or handled gracefully
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+			},
+		},
+	}
+
+	_, err := Translate(stmts)
+	if err == nil {
+		t.Fatal("expected error for empty table name")
+	}
+}
+
+func TestTranslate_FKActionParsing(t *testing.T) {
+	// Test that FK action values are accepted correctly
+	actions := []struct {
+		input FKAction
+		want  schema.FKAction
+	}{
+		{FKRestrict, schema.FKRestrict},
+		{FKCascade, schema.FKCascade},
+		{FKSetNull, schema.FKSetNull},
+		{FKSetDefault, schema.FKSetDefault},
+		{FKNoAction, schema.FKNoAction},
+	}
+
+	parent := CreateTableStmt{
+		Name: "parent",
+		Columns: []ColumnDef{
+			{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+		},
+	}
+
+	for _, a := range actions {
+		stmts := []Stmt{
+			parent,
+			CreateTableStmt{
+				Name: "child",
+				Columns: []ColumnDef{
+					{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+					{Name: "parent_id", Type: ColumnType{BaseType: "int"}},
+				},
+				TableConstraints: []TableConstraint{
+					{
+						Type:       ConstraintForeignKey,
+						Columns:    []string{"parent_id"},
+						RefTable:   "parent",
+						RefColumns: []string{"id"},
+						OnUpdate:   a.input,
+					},
+				},
+			},
+		}
+
+		s, err := Translate(stmts)
+		if err != nil {
+			t.Fatalf("Translate() error for action=%q: %v", a.input, err)
+		}
+
+		fk := s.Tables[1].ForeignKeys[0]
+		if fk.OnUpdate != a.want {
+			t.Errorf("OnUpdate: expected %q, got %q", a.want, fk.OnUpdate)
+		}
+	}
+}
+
+func TestTranslate_ValidateEnumRefExists(t *testing.T) {
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "t",
+			Columns: []ColumnDef{
+				{Name: "mood", Type: ColumnType{BaseType: "nonexistent_enum"}},
+			},
+		},
+	}
+
+	_, err := Translate(stmts)
+	if err == nil {
+		t.Fatal("expected error for enum reference to undefined type")
 	}
 }

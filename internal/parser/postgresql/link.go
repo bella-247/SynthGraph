@@ -16,7 +16,7 @@ package postgresql
 func (st *schemaTranslator) link() error {
 	// Build table name → index lookup
 	tableIndex := make(map[string]int, len(st.tables))
-	
+
 	for i, tb := range st.tables {
 		if _, exists := tableIndex[tb.name]; exists {
 			continue // duplicate name, will be caught by validate

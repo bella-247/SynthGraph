@@ -252,31 +252,55 @@ synthgraph version
 
 ## Architecture
 
-SynthGraph is a strict linear pipeline. No stage communicates with a non-adjacent stage.
+SynthGraph is a strict linear pipeline. Every stage consumes one typed artifact and produces another.
 
 ```
-Schema File
+SQL File
     │
     ▼
-Parser          → Internal Schema Model
+  Parser
     │
     ▼
-Graph Builder   → Directed Schema Graph
+  AST
     │
     ▼
-Planner         → Generation Plan (with cycle resolution)
+  Translator (extract → normalize → link → validate → build)
     │
     ▼
-Generator       → Raw Dataset
+  schema.Model     ◄── parser-agnostic canonical IR
     │
     ▼
-Validator       → Verified Dataset (or hard failure)
+  Graph Builder
     │
     ▼
-Exporter        → SQL / CSV output
+  SchemaGraph
+    │
+    ▼
+  Planner (topological sort + cycle detection)
+    │
+    ▼
+  GenerationPlan
+    │
+    ▼
+  Generator (per-table seeded RNG)
+    │
+    ▼
+  Dataset
+    │
+    ▼
+  Post-generation Validator
+    │
+    ▼
+  ValidatedDataset
+    │
+    ▼
+  Exporter
+    │
+    ▼
+  SQL INSERT / CSV
 ```
 
-Every parser produces the same Internal Schema Model. The rest of the pipeline never knows what format the schema came from.
+Every parser produces the same `schema.Model`. The graph engine, planner, generator, validator, and exporter never know what format the schema came from.
 
 Full architecture documentation: [docs/architecture.md](docs/architecture.md)
 
