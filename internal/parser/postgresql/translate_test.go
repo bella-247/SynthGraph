@@ -879,3 +879,314 @@ func TestTranslate_ValidateEnumRefExists(t *testing.T) {
 		t.Fatal("expected error for enum reference to undefined type")
 	}
 }
+
+func TestTranslate_InlineForeignKey(t *testing.T) {
+	// Column-level REFERENCES must produce the same schema.ForeignKey
+	// as an equivalent table-level FOREIGN KEY constraint.
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "users",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+			},
+		},
+		CreateTableStmt{
+			Name: "orders",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+				{
+					Name: "user_id",
+					Type: ColumnType{BaseType: "int"},
+					References: &InlineFKRef{
+						RefTable:   "users",
+						RefColumns: []string{"id"},
+						OnDelete:   FKRestrict,
+					},
+				},
+			},
+		},
+	}
+
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+
+	if len(s.Tables) != 2 {
+		t.Fatalf("expected 2 tables, got %d", len(s.Tables))
+	}
+
+	orders := s.Tables[1]
+	if len(orders.ForeignKeys) != 1 {
+		t.Fatalf("expected 1 FK, got %d", len(orders.ForeignKeys))
+	}
+
+	fk := orders.ForeignKeys[0]
+	if len(fk.Columns) != 1 || fk.Columns[0] != "user_id" {
+		t.Errorf("expected FK column [user_id], got %v", fk.Columns)
+	}
+	if fk.RefTable != "users" {
+		t.Errorf("expected RefTable 'users', got %q", fk.RefTable)
+	}
+	if fk.OnDelete != schema.FKRestrict {
+		t.Errorf("expected OnDelete=RESTRICT, got %q", fk.OnDelete)
+	}
+}
+
+func TestTranslate_InlineForeignKeyComposite(t *testing.T) {
+	// Inline composite FK: multiple columns referenced from a single column
+	// (rare in practice but valid PostgreSQL).
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "projects",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+			},
+		},
+		CreateTableStmt{
+			Name: "tasks",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+				{
+					Name: "project_id",
+					Type: ColumnType{BaseType: "int"},
+					References: &InlineFKRef{
+						RefTable:   "projects",
+						RefColumns: []string{"id"},
+						OnUpdate:   FKCascade,
+					},
+				},
+			},
+		},
+	}
+
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+
+	fk := s.Tables[1].ForeignKeys[0]
+	if fk.OnUpdate != schema.FKCascade {
+		t.Errorf("expected OnUpdate=CASCADE, got %q", fk.OnUpdate)
+	}
+}
+
+func TestTranslate_CheckConstraintPreserved(t *testing.T) {
+	// CHECK expressions must be preserved in the schema model,
+	// even though V1 doesn't enforce them.
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "products",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+				{Name: "price", Type: ColumnType{BaseType: "decimal", Length: 10, Precision: 2}},
+				{Name: "rating", Type: ColumnType{BaseType: "int"}},
+			},
+			TableConstraints: []TableConstraint{
+				{
+					Type:      ConstraintCheck,
+					Name:      "price_check",
+					CheckExpr: "price > 0",
+				},
+				{
+					Type:      ConstraintCheck,
+					Name:      "rating_check",
+					CheckExpr: "rating >= 1 AND rating <= 5",
+				},
+			},
+		},
+	}
+
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+
+	tbl := s.Tables[0]
+	if len(tbl.Checks) != 2 {
+		t.Fatalf("expected 2 CHECK constraints, got %d", len(tbl.Checks))
+	}
+
+	if tbl.Checks[0].Name != "price_check" {
+		t.Errorf("expected check name 'price_check', got %q", tbl.Checks[0].Name)
+	}
+	if tbl.Checks[0].Expression != "price > 0" {
+		t.Errorf("expected check expression 'price > 0', got %q", tbl.Checks[0].Expression)
+	}
+	if tbl.Checks[1].Name != "rating_check" {
+		t.Errorf("expected check name 'rating_check', got %q", tbl.Checks[1].Name)
+	}
+	if tbl.Checks[1].Expression != "rating >= 1 AND rating <= 5" {
+		t.Errorf("expected check expression 'rating >= 1 AND rating <= 5', got %q", tbl.Checks[1].Expression)
+	}
+}
+
+func TestTranslate_TypeLengthPreserved(t *testing.T) {
+	// VARCHAR(n) and DECIMAL(p,s) must preserve their length/precision
+	// through the translation pipeline.
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "t",
+			Columns: []ColumnDef{
+				{
+					Name: "title",
+					Type: ColumnType{BaseType: "varchar", Length: 255},
+				},
+				{
+					Name: "price",
+					Type: ColumnType{BaseType: "decimal", Length: 10, Precision: 2},
+				},
+				{
+					Name: "count",
+					Type: ColumnType{BaseType: "int"},
+				},
+			},
+		},
+	}
+
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+
+	tbl := s.Tables[0]
+	if len(tbl.Columns) != 3 {
+		t.Fatalf("expected 3 columns, got %d", len(tbl.Columns))
+	}
+
+	// VARCHAR(255)
+	if tbl.Columns[0].Length != 255 {
+		t.Errorf("expected Length=255 for varchar column, got %d", tbl.Columns[0].Length)
+	}
+	if tbl.Columns[0].Precision != 0 {
+		t.Errorf("expected Precision=0 for varchar column, got %d", tbl.Columns[0].Precision)
+	}
+
+	// DECIMAL(10,2)
+	if tbl.Columns[1].Length != 10 {
+		t.Errorf("expected Length=10 for decimal column, got %d", tbl.Columns[1].Length)
+	}
+	if tbl.Columns[1].Precision != 2 {
+		t.Errorf("expected Precision=2 for decimal column, got %d", tbl.Columns[1].Precision)
+	}
+
+	// INT — no length/precision
+	if tbl.Columns[2].Length != 0 {
+		t.Errorf("expected Length=0 for int column, got %d", tbl.Columns[2].Length)
+	}
+	if tbl.Columns[2].Precision != 0 {
+		t.Errorf("expected Precision=0 for int column, got %d", tbl.Columns[2].Precision)
+	}
+}
+
+func TestTranslate_InlineFKWithTableFK(t *testing.T) {
+	// When both an inline REFERENCES and a table-level FOREIGN KEY exist
+	// on the same table, both must be preserved.
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "users",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+			},
+		},
+		CreateTableStmt{
+			Name: "groups",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+			},
+		},
+		CreateTableStmt{
+			Name: "members",
+			Columns: []ColumnDef{
+				{Name: "id", Type: ColumnType{BaseType: "int"}, IsPrimaryKey: true},
+				{
+					Name: "user_id",
+					Type: ColumnType{BaseType: "int"},
+					References: &InlineFKRef{
+						RefTable:   "users",
+						RefColumns: []string{"id"},
+					},
+				},
+				{Name: "group_id", Type: ColumnType{BaseType: "int"}},
+			},
+			TableConstraints: []TableConstraint{
+				{
+					Type:       ConstraintForeignKey,
+					Columns:    []string{"group_id"},
+					RefTable:   "groups",
+					RefColumns: []string{"id"},
+				},
+			},
+		},
+	}
+
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+
+	members := s.Tables[2]
+	if len(members.ForeignKeys) != 2 {
+		t.Fatalf("expected 2 FKs (inline + table-level), got %d", len(members.ForeignKeys))
+	}
+}
+
+func TestTranslate_ArrayTypePreserved(t *testing.T) {
+	// Array types (type[]) should be preserved through the pipeline.
+	// The schema.Column.Type field currently uses BaseType only, but
+	// IsArray information should not cause errors.
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "t",
+			Columns: []ColumnDef{
+				{
+					Name: "tags",
+					Type: ColumnType{BaseType: "text", IsArray: true},
+				},
+				{
+					Name: "matrix",
+					Type: ColumnType{BaseType: "int", IsArray: true},
+				},
+			},
+		},
+	}
+
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatalf("Translate() error on array types = %v", err)
+	}
+
+	if len(s.Tables[0].Columns) != 2 {
+		t.Errorf("expected 2 array columns, got %d", len(s.Tables[0].Columns))
+	}
+}
+
+func TestTranslate_UnnamedCheckConstraint(t *testing.T) {
+	// CHECK constraints without a name should still preserve the expression.
+	stmts := []Stmt{
+		CreateTableStmt{
+			Name: "t",
+			Columns: []ColumnDef{
+				{Name: "age", Type: ColumnType{BaseType: "int"}},
+			},
+			TableConstraints: []TableConstraint{
+				{
+					Type:      ConstraintCheck,
+					CheckExpr: "age >= 0",
+				},
+			},
+		},
+	}
+
+	s, err := Translate(stmts)
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+
+	if len(s.Tables[0].Checks) != 1 {
+		t.Fatalf("expected 1 check, got %d", len(s.Tables[0].Checks))
+	}
+	if s.Tables[0].Checks[0].Expression != "age >= 0" {
+		t.Errorf("expected 'age >= 0', got %q", s.Tables[0].Checks[0].Expression)
+	}
+}

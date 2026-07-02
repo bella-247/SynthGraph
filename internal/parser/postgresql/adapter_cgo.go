@@ -143,6 +143,9 @@ func extractColumnConstraint(column *ColumnDef, constraintNode *pg_query.Node) e
 		column.IsUnique = true
 	case pg_query.ConstrType_CONSTR_DEFAULT:
 		column.Default = nodeToDefaultString(constraint.Constraint.RawExpr)
+
+	case pg_query.ConstrType_CONSTR_FOREIGN:
+		column.References = extractInlineFKRef(constraint.Constraint)
 	}
 	return nil
 }
@@ -216,6 +219,7 @@ func convertConstraint(constraint *pg_query.Constraint) *TableConstraint {
 
 	case pg_query.ConstrType_CONSTR_CHECK:
 		tableConstraint.Type = ConstraintCheck
+		tableConstraint.CheckExpr = nodeToDefaultString(constraint.RawExpr)
 		return tableConstraint
 	}
 
@@ -242,6 +246,27 @@ func mapForeignKeyAction(actionCode string) FKAction {
 	default:
 		return FKNoAction
 	}
+}
+
+// extractInlineFKRef converts a column-level FOREIGN constraint from pg_query
+// into our InlineFKRef representation, which the translator later normalizes
+// to the same schema.ForeignKey as a table-level FOREIGN KEY constraint.
+func extractInlineFKRef(constraint *pg_query.Constraint) *InlineFKRef {
+	if constraint.Pktable == nil {
+		return nil
+	}
+
+	ref := &InlineFKRef{}
+	if constraint.Pktable.Schemaname != "" {
+		ref.RefTable = constraint.Pktable.Schemaname + "." + constraint.Pktable.Relname
+	} else {
+		ref.RefTable = constraint.Pktable.Relname
+	}
+	ref.RefColumns = extractNames(constraint.PkAttrs)
+	ref.OnDelete = mapForeignKeyAction(constraint.FkDelAction)
+	ref.OnUpdate = mapForeignKeyAction(constraint.FkUpdAction)
+
+	return ref
 }
 
 func convertTypeName(typeName *pg_query.TypeName) ColumnType {

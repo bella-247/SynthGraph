@@ -65,6 +65,10 @@ func normalizeColumn(raw ColumnDef) schema.Column {
 		column.Type = raw.Type.BaseType
 	}
 
+	// Preserve type metadata for types that carry length/precision
+	column.Length = raw.Type.Length
+	column.Precision = raw.Type.Precision
+
 	// Nullability: default is nullable unless NOT NULL or PRIMARY KEY is set
 	column.Nullable = !raw.NotNull && !raw.IsPrimaryKey
 

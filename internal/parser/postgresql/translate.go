@@ -34,6 +34,7 @@ type tableBuilder struct {
 	pkCols  []string
 	fks     []schema.ForeignKey
 	uniques [][]string
+	checks  []schema.CheckConstraint // preserved CHECK expressions
 }
 
 // Translate converts our PostgreSQL DDL AST into the canonical schema.Model.
@@ -91,7 +92,9 @@ func newTranslator(stmts []Stmt) *schemaTranslator {
 				pkCols:     extractInlinePK(typedStmt),
 				uniques:    extractInlineUniques(typedStmt),
 			}
-			table.fks, table.pkCols, table.uniques = extractTableConstraints(typedStmt, table.pkCols, table.uniques)
+			table.fks, table.pkCols, table.uniques, table.checks = extractTableConstraints(typedStmt, table.pkCols, table.uniques)
+			// Collect inline REFERENCES constraints (column-level FKs)
+			table.fks = append(table.fks, extractInlineFKs(typedStmt)...)
 			translator.tables = append(translator.tables, table)
 		}
 	}
@@ -139,7 +142,7 @@ func extractInlineUniques(stmt CreateTableStmt) [][]string {
 
 // extractTableConstraints processes table-level constraints and merges them
 // into the already-collected column-level constraint lists.
-func extractTableConstraints(stmt CreateTableStmt, existingPK []string, existingUniques [][]string) (fks []schema.ForeignKey, pkCols []string, uniques [][]string) {
+func extractTableConstraints(stmt CreateTableStmt, existingPK []string, existingUniques [][]string) (fks []schema.ForeignKey, pkCols []string, uniques [][]string, checks []schema.CheckConstraint) {
 	pkCols = existingPK
 	uniques = existingUniques
 
@@ -161,11 +164,32 @@ func extractTableConstraints(stmt CreateTableStmt, existingPK []string, existing
 			uniques = append(uniques, tableConstraint.Columns)
 
 		case ConstraintCheck:
-			// V1: parsed, available for future validation
+			checks = append(checks, schema.CheckConstraint{
+				Name:       tableConstraint.Name,
+				Expression: tableConstraint.CheckExpr,
+			})
 		}
 	}
 
-	return fks, pkCols, uniques
+	return fks, pkCols, uniques, checks
+}
+
+// extractInlineFKs collects column-level REFERENCES constraints and returns
+// them as schema.ForeignKey entries, which are equivalent to table-level FKs.
+func extractInlineFKs(stmt CreateTableStmt) []schema.ForeignKey {
+	var foreignKeys []schema.ForeignKey
+	for _, column := range stmt.Columns {
+		if column.References != nil {
+			foreignKeys = append(foreignKeys, schema.ForeignKey{
+				Columns:    []string{column.Name},
+				RefTable:   column.References.RefTable,
+				RefColumns: column.References.RefColumns,
+				OnDelete:   schema.FKAction(column.References.OnDelete),
+				OnUpdate:   schema.FKAction(column.References.OnUpdate),
+			})
+		}
+	}
+	return foreignKeys
 }
 
 // dedupe removes duplicate strings while preserving order.
@@ -259,6 +283,9 @@ func (translator *schemaTranslator) build() *schema.Model {
 
 		// Copy resolved foreign keys
 		table.ForeignKeys = tableBuilder.fks
+
+		// Copy preserved CHECK constraints
+		table.Checks = tableBuilder.checks
 
 		model.Tables = append(model.Tables, table)
 		model.TableMap[table.Name] = table
