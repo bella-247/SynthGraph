@@ -14,17 +14,17 @@ func init() {
 }
 
 func parseWithPgQuery(text string) ([]Stmt, error) {
-	stmts := preprocessSQL(text)
+	statements := preprocessSQL(text)
 	var result []Stmt
 
-	for _, stmtText := range stmts {
-		tree, err := pg_query.Parse(stmtText)
+	for _, statementText := range statements {
+		tree, err := pg_query.Parse(statementText)
 		if err != nil {
 			return nil, fmt.Errorf("parse error: %w", err)
 		}
 
-		for _, rawStmt := range tree.Stmts {
-			converted, err := convertNode(rawStmt.Stmt)
+		for _, rawStatement := range tree.Stmts {
+			converted, err := convertNode(rawStatement.Stmt)
 			if err != nil {
 				return nil, err
 			}
@@ -38,11 +38,11 @@ func parseWithPgQuery(text string) ([]Stmt, error) {
 }
 
 func convertNode(node *pg_query.Node) (Stmt, error) {
-	switch n := node.Node.(type) {
+	switch typedNode := node.Node.(type) {
 	case *pg_query.Node_CreateStmt:
-		return convertCreateTable(n.CreateStmt)
+		return convertCreateTable(typedNode.CreateStmt)
 	case *pg_query.Node_CreateEnumStmt:
-		return convertCreateEnum(n.CreateEnumStmt)
+		return convertCreateEnum(typedNode.CreateEnumStmt)
 	default:
 		// Explicit error — never silently drop statements.
 		// Add a handler above when supporting this node type.
@@ -50,121 +50,120 @@ func convertNode(node *pg_query.Node) (Stmt, error) {
 	}
 }
 
-func convertCreateEnum(stmt *pg_query.CreateEnumStmt) (CreateEnumStmt, error) {
+func convertCreateEnum(statement *pg_query.CreateEnumStmt) (CreateEnumStmt, error) {
 	// TypeName is a list of name parts, e.g. ['public', 'mood'] for CREATE TYPE public.mood AS ENUM
-	parts := make([]string, 0, len(stmt.TypeName))
-	for _, n := range stmt.TypeName {
-		if s, ok := n.Node.(*pg_query.Node_String_); ok {
-			parts = append(parts, s.String_.Sval)
+	nameParts := make([]string, 0, len(statement.TypeName))
+	for _, nameNode := range statement.TypeName {
+		if stringNode, ok := nameNode.Node.(*pg_query.Node_String_); ok {
+			nameParts = append(nameParts, stringNode.String_.Sval)
 		}
 	}
 
 	var schema, name string
-	switch len(parts) {
+	switch len(nameParts) {
 	case 0:
 		// No name parts — will be caught by validation
 	case 1:
-		name = parts[0]
+		name = nameParts[0]
 	default:
-		schema = parts[0]
-		name = parts[1]
+		schema = nameParts[0]
+		name = nameParts[1]
 	}
 
-	vals := make([]string, len(stmt.Vals))
-	for i, v := range stmt.Vals {
-		if s, ok := v.Node.(*pg_query.Node_String_); ok {
-			vals[i] = s.String_.Sval
+	enumValues := make([]string, len(statement.Vals))
+	for index, valueNode := range statement.Vals {
+		if stringNode, ok := valueNode.Node.(*pg_query.Node_String_); ok {
+			enumValues[index] = stringNode.String_.Sval
 		}
 	}
-	return CreateEnumStmt{Schema: schema, Name: name, Values: vals}, nil
+	return CreateEnumStmt{Schema: schema, Name: name, Values: enumValues}, nil
 }
 
-func convertCreateTable(stmt *pg_query.CreateStmt) (CreateTableStmt, error) {
-	ct := CreateTableStmt{
-		Name:        stmt.Relation.Relname,
-		IfNotExists: stmt.IfNotExists,
+func convertCreateTable(statement *pg_query.CreateStmt) (CreateTableStmt, error) {
+	table := CreateTableStmt{
+		Name:        statement.Relation.Relname,
+		IfNotExists: statement.IfNotExists,
 	}
-	if stmt.Relation.Schemaname != "" {
-		ct.Schema = stmt.Relation.Schemaname
+	if statement.Relation.Schemaname != "" {
+		table.Schema = statement.Relation.Schemaname
 	}
 
-	for _, elt := range stmt.TableElts {
-		switch e := elt.Node.(type) {
+	for _, element := range statement.TableElts {
+		switch typedElement := element.Node.(type) {
 		case *pg_query.Node_ColumnDef:
-			col, err := convertColumnDef(e.ColumnDef)
+			column, err := convertColumnDef(typedElement.ColumnDef)
 			if err != nil {
-				return ct, err
+				return table, err
 			}
-			ct.Columns = append(ct.Columns, col)
+			table.Columns = append(table.Columns, column)
 
 		case *pg_query.Node_Constraint:
-			tc := convertConstraint(e.Constraint)
-			if tc != nil {
-				ct.TableConstraints = append(ct.TableConstraints, *tc)
+			constraint := convertConstraint(typedElement.Constraint)
+			if constraint != nil {
+				table.TableConstraints = append(table.TableConstraints, *constraint)
 			}
 		}
 	}
 
-	return ct, nil
+	return table, nil
 }
 
-func convertColumnDef(def *pg_query.ColumnDef) (ColumnDef, error) {
-	col := ColumnDef{
-		Name: def.Colname,
+func convertColumnDef(definition *pg_query.ColumnDef) (ColumnDef, error) {
+	column := ColumnDef{
+		Name: definition.Colname,
 	}
 
-	if def.TypeName != nil {
-		col.Type = convertTypeName(def.TypeName)
+	if definition.TypeName != nil {
+		column.Type = convertTypeName(definition.TypeName)
 	}
 
-	for _, c := range def.Constraints {
-		if err := extractColumnConstraint(&col, c); err != nil {
-			return col, fmt.Errorf("column %q: %w", def.Colname, err)
+	for _, constraintNode := range definition.Constraints {
+		if err := extractColumnConstraint(&column, constraintNode); err != nil {
+			return column, fmt.Errorf("column %q: %w", definition.Colname, err)
 		}
 	}
 
-	return col, nil
+	return column, nil
 }
 
 // extractColumnConstraint applies a single column-level constraint to the ColumnDef.
-func extractColumnConstraint(col *ColumnDef, c *pg_query.Node) error {
-	constraint, ok := c.Node.(*pg_query.Node_Constraint)
+func extractColumnConstraint(column *ColumnDef, constraintNode *pg_query.Node) error {
+	constraint, ok := constraintNode.Node.(*pg_query.Node_Constraint)
 	if !ok {
 		return nil
 	}
 	switch constraint.Constraint.Contype {
 	case pg_query.ConstrType_CONSTR_NOTNULL:
-		col.NotNull = true
+		column.NotNull = true
 	case pg_query.ConstrType_CONSTR_NULL:
-		col.NotNull = false
+		column.NotNull = false
 	case pg_query.ConstrType_CONSTR_PRIMARY:
-		col.IsPrimaryKey = true
+		column.IsPrimaryKey = true
 	case pg_query.ConstrType_CONSTR_UNIQUE:
-		col.IsUnique = true
+		column.IsUnique = true
 	case pg_query.ConstrType_CONSTR_DEFAULT:
-		col.Default = nodeToDefaultString(constraint.Constraint.RawExpr)
+		column.Default = nodeToDefaultString(constraint.Constraint.RawExpr)
 	}
 	return nil
 }
 
 // nodeToDefaultString extracts the default expression as a string.
-// Delegates all non-trivial cases to pg_query.Deparse to avoid duplicating
-// PostgreSQL's expression-to-SQL logic.
+// Fast path for simple constants — falls back to pg_query.Deparse for complex expressions.
 func nodeToDefaultString(node *pg_query.Node) string {
 	if node == nil {
 		return ""
 	}
 
-	// Fast path for simple constants (most common case)
-	switch n := node.Node.(type) {
+	// Fast path for simple constants (most common default values)
+	switch typedNode := node.Node.(type) {
 	case *pg_query.Node_AConst:
-		switch v := n.AConst.Val.(type) {
+		switch constantValue := typedNode.AConst.Val.(type) {
 		case *pg_query.A_Const_Ival:
-			return fmt.Sprintf("%d", v.Ival.Ival)
+			return fmt.Sprintf("%d", constantValue.Ival.Ival)
 		case *pg_query.A_Const_Sval:
-			return fmt.Sprintf("'%s'", v.Sval.Sval)
+			return fmt.Sprintf("'%s'", constantValue.Sval.Sval)
 		case *pg_query.A_Const_Boolval:
-			if v.Boolval.Boolval {
+			if constantValue.Boolval.Boolval {
 				return "true"
 			}
 			return "false"
@@ -182,54 +181,54 @@ func nodeToDefaultString(node *pg_query.Node) string {
 	return result
 }
 
-func convertConstraint(c *pg_query.Constraint) *TableConstraint {
-	tc := &TableConstraint{Name: c.Conname}
+func convertConstraint(constraint *pg_query.Constraint) *TableConstraint {
+	tableConstraint := &TableConstraint{Name: constraint.Conname}
 
-	switch c.Contype {
+	switch constraint.Contype {
 	case pg_query.ConstrType_CONSTR_PRIMARY:
-		tc.Type = ConstraintPrimaryKey
-		tc.Columns = extractNames(c.Keys)
-		return tc
+		tableConstraint.Type = ConstraintPrimaryKey
+		tableConstraint.Columns = extractNames(constraint.Keys)
+		return tableConstraint
 
 	case pg_query.ConstrType_CONSTR_UNIQUE:
-		tc.Type = ConstraintUnique
-		tc.Columns = extractNames(c.Keys)
-		return tc
+		tableConstraint.Type = ConstraintUnique
+		tableConstraint.Columns = extractNames(constraint.Keys)
+		return tableConstraint
 
 	case pg_query.ConstrType_CONSTR_FOREIGN:
-		tc.Type = ConstraintForeignKey
-		if len(c.FkAttrs) > 0 {
-			tc.Columns = extractNames(c.FkAttrs)
-		} else if len(c.Keys) > 0 {
-			tc.Columns = extractNames(c.Keys)
+		tableConstraint.Type = ConstraintForeignKey
+		if len(constraint.FkAttrs) > 0 {
+			tableConstraint.Columns = extractNames(constraint.FkAttrs)
+		} else if len(constraint.Keys) > 0 {
+			tableConstraint.Columns = extractNames(constraint.Keys)
 		}
-		if c.Pktable != nil {
-			if c.Pktable.Schemaname != "" {
-				tc.RefTable = c.Pktable.Schemaname + "." + c.Pktable.Relname
+		if constraint.Pktable != nil {
+			if constraint.Pktable.Schemaname != "" {
+				tableConstraint.RefTable = constraint.Pktable.Schemaname + "." + constraint.Pktable.Relname
 			} else {
-				tc.RefTable = c.Pktable.Relname
+				tableConstraint.RefTable = constraint.Pktable.Relname
 			}
 		}
-		tc.RefColumns = extractNames(c.PkAttrs)
-		tc.OnDelete = fkActionString(c.FkDelAction)
-		tc.OnUpdate = fkActionString(c.FkUpdAction)
-		return tc
+		tableConstraint.RefColumns = extractNames(constraint.PkAttrs)
+		tableConstraint.OnDelete = mapForeignKeyAction(constraint.FkDelAction)
+		tableConstraint.OnUpdate = mapForeignKeyAction(constraint.FkUpdAction)
+		return tableConstraint
 
 	case pg_query.ConstrType_CONSTR_CHECK:
-		tc.Type = ConstraintCheck
-		return tc
+		tableConstraint.Type = ConstraintCheck
+		return tableConstraint
 	}
 
 	return nil
 }
 
-// fkActionString converts a pg_query FK action character to FKAction.
+// mapForeignKeyAction converts a pg_query FK action character to an FKAction.
 //   'a' = NO ACTION, 'r' = RESTRICT, 'c' = CASCADE, 'n' = SET NULL, 'd' = SET DEFAULT
-func fkActionString(c string) FKAction {
-	if c == "" {
+func mapForeignKeyAction(actionCode string) FKAction {
+	if actionCode == "" {
 		return FKNoAction
 	}
-	switch c {
+	switch actionCode {
 	case "a":
 		return FKNoAction
 	case "r":
@@ -246,49 +245,48 @@ func fkActionString(c string) FKAction {
 }
 
 func convertTypeName(typeName *pg_query.TypeName) ColumnType {
-	ct := ColumnType{}
+	columnType := ColumnType{}
 
-	parts := make([]string, 0, len(typeName.Names))
-	for _, n := range typeName.Names {
-		if s, ok := n.Node.(*pg_query.Node_String_); ok {
-			parts = append(parts, s.String_.Sval)
+	nameParts := make([]string, 0, len(typeName.Names))
+	for _, nameNode := range typeName.Names {
+		if stringNode, ok := nameNode.Node.(*pg_query.Node_String_); ok {
+			nameParts = append(nameParts, stringNode.String_.Sval)
 		}
 	}
 
-	if len(parts) > 0 {
-		ct.BaseType = strings.ToLower(parts[len(parts)-1])
+	if len(nameParts) > 0 {
+		columnType.BaseType = strings.ToLower(nameParts[len(nameParts)-1])
 	} else {
-		ct.BaseType = "unknown"
+		columnType.BaseType = "unknown"
 	}
 
 	if len(typeName.Typmods) > 0 {
-		if mod, ok := typeName.Typmods[0].Node.(*pg_query.Node_AConst); ok {
-			if i, ok := mod.AConst.Val.(*pg_query.A_Const_Ival); ok {
-				ct.Length = int(i.Ival.Ival)
+		if modifier, ok := typeName.Typmods[0].Node.(*pg_query.Node_AConst); ok {
+			if integerValue, ok := modifier.AConst.Val.(*pg_query.A_Const_Ival); ok {
+				columnType.Length = int(integerValue.Ival.Ival)
 			}
 		}
 		if len(typeName.Typmods) > 1 {
-			if mod, ok := typeName.Typmods[1].Node.(*pg_query.Node_AConst); ok {
-				if i, ok := mod.AConst.Val.(*pg_query.A_Const_Ival); ok {
-					ct.Precision = int(i.Ival.Ival)
+			if modifier, ok := typeName.Typmods[1].Node.(*pg_query.Node_AConst); ok {
+				if integerValue, ok := modifier.AConst.Val.(*pg_query.A_Const_Ival); ok {
+					columnType.Precision = int(integerValue.Ival.Ival)
 				}
 			}
 		}
 	}
 
-	ct.IsSerial = IsSerialType(ct.BaseType)
-	ct.IsArray = len(typeName.ArrayBounds) > 0
+	columnType.IsSerial = IsSerialType(columnType.BaseType)
+	columnType.IsArray = len(typeName.ArrayBounds) > 0
 
-	return ct
+	return columnType
 }
 
 func extractNames(nodes []*pg_query.Node) []string {
-	result := make([]string, 0, len(nodes))
-	for _, n := range nodes {
-		if s, ok := n.Node.(*pg_query.Node_String_); ok {
-			result = append(result, s.String_.Sval)
+	names := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		if stringNode, ok := node.Node.(*pg_query.Node_String_); ok {
+			names = append(names, stringNode.String_.Sval)
 		}
 	}
-	return result
+	return names
 }
-

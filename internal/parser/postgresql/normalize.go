@@ -22,20 +22,20 @@ import (
 //   - Every column has a populated schema.Column with canonical type.
 //   - No cross-reference resolution happens here (that is the link stage).
 //   - No consistency checking happens here (that is the validate stage).
-func (st *schemaTranslator) normalize() {
-	for ti := range st.tables {
-		tb := &st.tables[ti]
-		tb.columns = make([]schema.Column, len(tb.rawColumns))
+func (translator *schemaTranslator) normalize() {
+	for tableIndex := range translator.tables {
+		table := &translator.tables[tableIndex]
+		table.columns = make([]schema.Column, len(table.rawColumns))
 
-		for ci, raw := range tb.rawColumns {
-			tb.columns[ci] = normalizeColumn(raw)
+		for columnIndex, raw := range table.rawColumns {
+			table.columns[columnIndex] = normalizeColumn(raw)
 		}
 	}
 }
 
 // normalizeColumn converts a raw ColumnDef into a canonical schema.Column.
 func normalizeColumn(raw ColumnDef) schema.Column {
-	c := schema.Column{
+	column := schema.Column{
 		Name: raw.Name,
 	}
 
@@ -59,24 +59,20 @@ func normalizeColumn(raw ColumnDef) schema.Column {
 		abstractType = TypeEnum
 	}
 
-	c.Type = string(abstractType)
+	column.Type = string(abstractType)
 	if abstractType == TypeEnum {
 		// Preserve the original type name for enum lookups
-		c.Type = raw.Type.BaseType
+		column.Type = raw.Type.BaseType
 	}
 
-	// Nullability: default is nullable unless NOT NULL is set
-	nullable := !raw.NotNull
-	if raw.IsPrimaryKey {
-		nullable = false
-	}
-	c.Nullable = nullable
+	// Nullability: default is nullable unless NOT NULL or PRIMARY KEY is set
+	column.Nullable = !raw.NotNull && !raw.IsPrimaryKey
 
 	// Default: store as raw string
 	if raw.Default != "" {
-		d := raw.Default
-		c.Default = &d
+		defaultValue := raw.Default
+		column.Default = &defaultValue
 	}
 
-	return c
+	return column
 }

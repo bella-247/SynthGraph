@@ -27,8 +27,7 @@ type tableBuilder struct {
 	// Raw column definitions from the AST — consumed by the normalize stage
 	// to resolve types, nullability, defaults, etc.
 	rawColumns    []ColumnDef
-	enumColumns   []int       // column indices that reference enums (populated by normalizer, consumed by linker)
-	fkTargetIndex []int       // table index for each FK (populated by linker, -1 = unresolved) — see link.go
+	fkTargetIndex []int // table index for each FK (populated by linker, -1 = unresolved)
 
 	// Intermediate constraint state: assembled from both column-level
 	// (e.g. inline PRIMARY KEY) and table-level (e.g. PRIMARY KEY(a,b)) definitions.
@@ -50,15 +49,15 @@ type tableBuilder struct {
 // Each stage has a clear contract (see individual file docs). If any stage fails,
 // the pipeline halts and returns an error describing the violation.
 func Translate(stmts []Stmt) (*schema.Model, error) {
-	st := newTranslator(stmts)
-	st.normalize()
-	if err := st.link(); err != nil {
+	translator := newTranslator(stmts)
+	translator.normalize()
+	if err := translator.link(); err != nil {
 		return nil, err
 	}
-	if err := st.validate(); err != nil {
+	if err := translator.validate(); err != nil {
 		return nil, err
 	}
-	return st.build(), nil
+	return translator.build(), nil
 }
 
 // newTranslator initialises a schemaTranslator from the raw DDL AST.
@@ -72,32 +71,32 @@ func Translate(stmts []Stmt) (*schema.Model, error) {
 //     definitions but not yet deduplicated.
 //   - No information is intentionally discarded.
 func newTranslator(stmts []Stmt) *schemaTranslator {
-	st := &schemaTranslator{
+	translator := &schemaTranslator{
 		enums: make(map[string]*schema.EnumType),
 	}
 
 	for _, stmt := range stmts {
-		switch s := stmt.(type) {
+		switch typedStmt := stmt.(type) {
 		case CreateEnumStmt:
-			et := &schema.EnumType{
-				Name:   enumKey(s.Schema, s.Name),
-				Values: s.Values,
+			enumType := &schema.EnumType{
+				Name:   enumKey(typedStmt.Schema, typedStmt.Name),
+				Values: typedStmt.Values,
 			}
-			st.enums[et.Name] = et
+			translator.enums[enumType.Name] = enumType
 
 		case CreateTableStmt:
-			tb := tableBuilder{
-				name:       tableName(s.Schema, s.Name),
-				rawColumns: s.Columns,
-				pkCols:     extractInlinePK(s),
-				uniques:    extractInlineUniques(s),
+			table := tableBuilder{
+				name:       tableName(typedStmt.Schema, typedStmt.Name),
+				rawColumns: typedStmt.Columns,
+				pkCols:     extractInlinePK(typedStmt),
+				uniques:    extractInlineUniques(typedStmt),
 			}
-			tb.fks, tb.pkCols, tb.uniques = extractTableConstraints(s, tb.pkCols, tb.uniques)
-			st.tables = append(st.tables, tb)
+			table.fks, table.pkCols, table.uniques = extractTableConstraints(typedStmt, table.pkCols, table.uniques)
+			translator.tables = append(translator.tables, table)
 		}
 	}
 
-	return st
+	return translator
 }
 
 // enumKey builds a canonical enum name, schema-qualified if applicable.
@@ -118,21 +117,21 @@ func tableName(schema, name string) string {
 
 // extractInlinePK collects column-level PRIMARY KEY flags into a PK column list.
 func extractInlinePK(stmt CreateTableStmt) []string {
-	var pk []string
-	for _, col := range stmt.Columns {
-		if col.IsPrimaryKey {
-			pk = append(pk, col.Name)
+	var primaryKeys []string
+	for _, column := range stmt.Columns {
+		if column.IsPrimaryKey {
+			primaryKeys = append(primaryKeys, column.Name)
 		}
 	}
-	return pk
+	return primaryKeys
 }
 
 // extractInlineUniques collects column-level UNIQUE flags into unique-constraint lists.
 func extractInlineUniques(stmt CreateTableStmt) [][]string {
 	var uniques [][]string
-	for _, col := range stmt.Columns {
-		if col.IsUnique {
-			uniques = append(uniques, []string{col.Name})
+	for _, column := range stmt.Columns {
+		if column.IsUnique {
+			uniques = append(uniques, []string{column.Name})
 		}
 	}
 	return uniques
@@ -144,22 +143,22 @@ func extractTableConstraints(stmt CreateTableStmt, existingPK []string, existing
 	pkCols = existingPK
 	uniques = existingUniques
 
-	for _, tc := range stmt.TableConstraints {
-		switch tc.Type {
+	for _, tableConstraint := range stmt.TableConstraints {
+		switch tableConstraint.Type {
 		case ConstraintPrimaryKey:
-			pkCols = append(pkCols, tc.Columns...)
+			pkCols = append(pkCols, tableConstraint.Columns...)
 
 		case ConstraintForeignKey:
 			fks = append(fks, schema.ForeignKey{
-				Columns:    tc.Columns,
-				RefTable:   tc.RefTable,
-				RefColumns: tc.RefColumns,
-				OnDelete:   schema.FKAction(tc.OnDelete),
-				OnUpdate:   schema.FKAction(tc.OnUpdate),
+				Columns:    tableConstraint.Columns,
+				RefTable:   tableConstraint.RefTable,
+				RefColumns: tableConstraint.RefColumns,
+				OnDelete:   schema.FKAction(tableConstraint.OnDelete),
+				OnUpdate:   schema.FKAction(tableConstraint.OnUpdate),
 			})
 
 		case ConstraintUnique:
-			uniques = append(uniques, tc.Columns)
+			uniques = append(uniques, tableConstraint.Columns)
 
 		case ConstraintCheck:
 			// V1: parsed, available for future validation
@@ -169,48 +168,48 @@ func extractTableConstraints(stmt CreateTableStmt, existingPK []string, existing
 	return fks, pkCols, uniques
 }
 
-// dedupe removes duplicate strings preserving order.
-func dedupe(s []string) []string {
-	seen := make(map[string]bool, len(s))
-	result := make([]string, 0, len(s))
-	for _, v := range s {
-		if !seen[v] {
-			seen[v] = true
-			result = append(result, v)
+// dedupe removes duplicate strings while preserving order.
+func dedupe(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		if !seen[value] {
+			seen[value] = true
+			unique = append(unique, value)
 		}
 	}
-	return result
+	return unique
 }
 
 // dedupeUniques removes unique constraints already covered by the primary key.
-func dedupeUniques(uniques [][]string, pk []string) [][]string {
-	pkSet := make(map[string]bool, len(pk))
-	for _, v := range pk {
-		pkSet[v] = true
+func dedupeUniques(uniques [][]string, primaryKey []string) [][]string {
+	primaryKeySet := make(map[string]bool, len(primaryKey))
+	for _, column := range primaryKey {
+		primaryKeySet[column] = true
 	}
 
-	isPkCovered := func(cols []string) bool {
-		for _, c := range cols {
-			if !pkSet[c] {
+	isCoveredByPrimaryKey := func(columns []string) bool {
+		for _, column := range columns {
+			if !primaryKeySet[column] {
 				return false
 			}
 		}
-		return len(cols) > 0
+		return len(columns) > 0
 	}
 
 	seen := make(map[string]bool)
 	result := make([][]string, 0)
 
-	for _, u := range uniques {
-		if isPkCovered(u) {
+	for _, constraint := range uniques {
+		if isCoveredByPrimaryKey(constraint) {
 			continue
 		}
-		key := strings.Join(u, ",")
+		key := strings.Join(constraint, ",")
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
-		result = append(result, u)
+		result = append(result, constraint)
 	}
 
 	return result
@@ -224,46 +223,46 @@ func dedupeUniques(uniques [][]string, pk []string) [][]string {
 //   - Unique constraints that are fully covered by the PK are removed.
 //   - All remaining constraints are in final form.
 //   - TableMap provides O(1) lookup by table name.
-func (st *schemaTranslator) build() *schema.Model {
-	m := &schema.Model{
-		TableMap: make(map[string]*schema.Table, len(st.tables)),
+func (translator *schemaTranslator) build() *schema.Model {
+	model := &schema.Model{
+		TableMap: make(map[string]*schema.Table, len(translator.tables)),
 	}
 
 	// Collect enums
-	for _, et := range st.enums {
-		m.Enums = append(m.Enums, *et)
+	for _, enumType := range translator.enums {
+		model.Enums = append(model.Enums, *enumType)
 	}
 
 	// Build each table
-	for _, tb := range st.tables {
-		t := &schema.Table{
-			Name:    tb.name,
-			Columns: tb.columns,
+	for _, tableBuilder := range translator.tables {
+		table := &schema.Table{
+			Name:    tableBuilder.name,
+			Columns: tableBuilder.columns,
 		}
 
 		// Deduplicate PK columns (same column can appear in both inline and table-level)
-		t.PrimaryKey = dedupe(tb.pkCols)
+		table.PrimaryKey = dedupe(tableBuilder.pkCols)
 
 		// Mark PK columns in the Column struct
-		pkSet := make(map[string]bool, len(t.PrimaryKey))
-		for _, p := range t.PrimaryKey {
-			pkSet[p] = true
+		primaryKeySet := make(map[string]bool, len(table.PrimaryKey))
+		for _, primaryKeyColumn := range table.PrimaryKey {
+			primaryKeySet[primaryKeyColumn] = true
 		}
-		for i := range t.Columns {
-			if pkSet[t.Columns[i].Name] {
-				t.Columns[i].IsPrimaryKey = true
+		for columnIndex := range table.Columns {
+			if primaryKeySet[table.Columns[columnIndex].Name] {
+				table.Columns[columnIndex].IsPrimaryKey = true
 			}
 		}
 
 		// Remove unique constraints covered by the PK
-		t.Unique = dedupeUniques(tb.uniques, t.PrimaryKey)
+		table.Unique = dedupeUniques(tableBuilder.uniques, table.PrimaryKey)
 
 		// Copy resolved foreign keys
-		t.ForeignKeys = tb.fks
+		table.ForeignKeys = tableBuilder.fks
 
-		m.Tables = append(m.Tables, t)
-		m.TableMap[t.Name] = t
+		model.Tables = append(model.Tables, table)
+		model.TableMap[table.Name] = table
 	}
 
-	return m
+	return model
 }

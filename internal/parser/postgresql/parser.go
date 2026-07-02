@@ -91,9 +91,9 @@ func preprocessSQL(text string) []string {
 		if idx := strings.Index(trimmed, "/*"); idx >= 0 {
 			endIdx := strings.Index(trimmed[idx+2:], "*/")
 			if endIdx >= 0 {
-				prefix := strings.TrimRight(trimmed[:idx], " 	")
-					suffix := strings.TrimSpace(trimmed[idx+2+endIdx+2:])
-					trimmed = strings.TrimSpace(prefix + suffix)
+				prefix := strings.TrimRight(trimmed[:idx], " \t")
+				suffix := strings.TrimSpace(trimmed[idx+2+endIdx+2:])
+				trimmed = strings.TrimSpace(prefix + suffix)
 			} else {
 				trimmed = strings.TrimSpace(trimmed[:idx])
 				inBlockComment = true
