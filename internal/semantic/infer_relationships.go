@@ -13,25 +13,25 @@ func inferRelationshipKind(edge *graph.Edge, sourceGraph *graph.Graph) Relations
 		return RelationshipKindHierarchy
 	}
 
-	metadata, hasMetadata := edge.Metadata.(*graph.FKMetadata)
+	foreignKeyMetadata, hasMetadata := edge.Metadata.(*graph.FKMetadata)
 	if !hasMetadata {
 		// Fallback for an edge missing metadata, though builder should prevent this.
 		return RelationshipKindAssociation
 	}
 
 	// 2. Many-to-many cardinality directly maps to ManyToMany semantics.
-	if metadata.Cardinality == graph.CardinalityManyToMany {
+	if foreignKeyMetadata.Cardinality == graph.CardinalityManyToMany {
 		return RelationshipKindManyToMany
 	}
 
-	isNullable := isForeignKeyNullable(edge, metadata, sourceGraph)
+	isNullable := isForeignKeyNullable(edge, foreignKeyMetadata, sourceGraph)
 
 	// 3. Composition vs Association/Aggregation
 	// If the foreign key is strictly required (NOT NULL on all source columns)
 	// AND the database is instructed to CASCADE deletes, this is strong evidence
 	// for existentially dependent Composition.
 	isStrictlyRequired := !isNullable
-	cascadesDeletes := metadata.OnDelete == schema.FKCascade
+	cascadesDeletes := foreignKeyMetadata.OnDelete == schema.FKCascade
 
 	if isStrictlyRequired && cascadesDeletes {
 		return RelationshipKindComposition
@@ -49,10 +49,10 @@ func inferRelationshipKind(edge *graph.Edge, sourceGraph *graph.Graph) Relations
 
 // isForeignKeyNullable checks if any of the columns participating in the
 // foreign key constraint are nullable.
-func isForeignKeyNullable(edge *graph.Edge, metadata *graph.FKMetadata, sourceGraph *graph.Graph) bool {
-	localCols := make(map[string]bool, len(metadata.LocalColumns))
-	for _, fkCol := range metadata.LocalColumns {
-		localCols[fkCol] = true
+func isForeignKeyNullable(edge *graph.Edge, foreignKeyMetadata *graph.FKMetadata, sourceGraph *graph.Graph) bool {
+	localColumns := make(map[string]bool, len(foreignKeyMetadata.LocalColumns))
+	for _, foreignKeyColumn := range foreignKeyMetadata.LocalColumns {
+		localColumns[foreignKeyColumn] = true
 	}
 
 	for _, edgeFromTable := range sourceGraph.Edges {
@@ -60,16 +60,16 @@ func isForeignKeyNullable(edge *graph.Edge, metadata *graph.FKMetadata, sourceGr
 			continue
 		}
 
-		colNode, exists := sourceGraph.Nodes[edgeFromTable.To]
+		columnNode, exists := sourceGraph.Nodes[edgeFromTable.To]
 		if !exists {
 			continue
 		}
 
-		if !localCols[colNode.Label] {
+		if !localColumns[columnNode.Label] {
 			continue
 		}
 
-		if colData, ok := colNode.Data.(graph.ColumnData); ok && colData.Nullable {
+		if columnData, ok := columnNode.Data.(graph.ColumnData); ok && columnData.Nullable {
 			return true
 		}
 	}

@@ -10,9 +10,9 @@ import (
 // naming conventions (created_at, updated_at, deleted_at).
 type TemporalRule struct{}
 
-func (rule *TemporalRule) Name() string { return "temporal_rule" }
+func (temporalRule *TemporalRule) Name() string { return "temporal_rule" }
 
-func (rule *TemporalRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
+func (temporalRule *TemporalRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
 	if tableNode.Kind != graph.NodeKindTable {
 		return nil
 	}

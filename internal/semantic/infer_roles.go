@@ -21,9 +21,9 @@ import (
 // junction semantics.
 type JunctionRule struct{}
 
-func (rule *JunctionRule) Name() string { return "junction_rule" }
+func (junctionRule *JunctionRule) Name() string { return "junction_rule" }
 
-func (rule *JunctionRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
+func (junctionRule *JunctionRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
 	tableData, isTableNode := tableNode.Data.(graph.TableData)
 	if !isTableNode || len(tableData.PrimaryKey) < 2 {
 		// Junction tables always have a composite PK (at least 2 columns).
@@ -67,9 +67,9 @@ func (rule *JunctionRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Grap
 // Confidence is 0.95 — a self-referencing FK is an unambiguous structural signal.
 type HierarchyRule struct{}
 
-func (rule *HierarchyRule) Name() string { return "hierarchy_rule" }
+func (hierarchyRule *HierarchyRule) Name() string { return "hierarchy_rule" }
 
-func (rule *HierarchyRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
+func (hierarchyRule *HierarchyRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
 	if tableNode.Kind != graph.NodeKindTable {
 		return nil
 	}
@@ -107,9 +107,9 @@ func (rule *HierarchyRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Gra
 // This threshold prevents misclassifying tables that only partially match the pattern.
 type LookupRule struct{}
 
-func (rule *LookupRule) Name() string { return "lookup_rule" }
+func (lookupRule *LookupRule) Name() string { return "lookup_rule" }
 
-func (rule *LookupRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
+func (lookupRule *LookupRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
 	_, isTableNode := tableNode.Data.(graph.TableData)
 	if !isTableNode {
 		return nil
@@ -118,8 +118,8 @@ func (rule *LookupRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph)
 	outgoingFKCount := countEdgesFrom(tableNode.ID, graph.EdgeKindReferences, sourceGraph)
 	incomingFKCount := countEdgesTo(tableNode.ID, graph.EdgeKindReferencedBy, sourceGraph)
 	columnCount := countEdgesFrom(tableNode.ID, graph.EdgeKindContains, sourceGraph)
-	hasTemporalColumns := detectTemporalPattern(tableNode.ID, sourceGraph).HasCreatedAt ||
-		detectTemporalPattern(tableNode.ID, sourceGraph).HasUpdatedAt
+	temporalPattern := detectTemporalPattern(tableNode.ID, sourceGraph)
+	hasTemporalColumns := temporalPattern.HasCreatedAt || temporalPattern.HasUpdatedAt
 
 	confidence := 0.0
 	evidenceLines := make([]string, 0, 4)
@@ -168,9 +168,9 @@ func (rule *LookupRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph)
 // with a stronger, more specific signal.
 type TransactionalRule struct{}
 
-func (rule *TransactionalRule) Name() string { return "transactional_rule" }
+func (transactionalRule *TransactionalRule) Name() string { return "transactional_rule" }
 
-func (rule *TransactionalRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
+func (transactionalRule *TransactionalRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
 	tableData, isTableNode := tableNode.Data.(graph.TableData)
 	if !isTableNode {
 		return nil
@@ -222,9 +222,9 @@ func (rule *TransactionalRule) Apply(tableNode *SemanticNode, sourceGraph *graph
 // Inferences list, giving downstream consumers a clear ranking.
 type EntityRule struct{}
 
-func (rule *EntityRule) Name() string { return "entity_rule" }
+func (entityRule *EntityRule) Name() string { return "entity_rule" }
 
-func (rule *EntityRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
+func (entityRule *EntityRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
 	if tableNode.Kind != graph.NodeKindTable {
 		return nil
 	}

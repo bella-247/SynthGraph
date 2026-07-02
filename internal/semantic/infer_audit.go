@@ -12,9 +12,9 @@ import (
 // naming conventions (created_by, updated_by, deleted_by).
 type AuditRule struct{}
 
-func (rule *AuditRule) Name() string { return "audit_rule" }
+func (auditRule *AuditRule) Name() string { return "audit_rule" }
 
-func (rule *AuditRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
+func (auditRule *AuditRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
 	if tableNode.Kind != graph.NodeKindTable {
 		return nil
 	}
