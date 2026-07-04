@@ -22,15 +22,9 @@ package graph
 // Build runs in O(T + C + E) time where T = tables, C = columns, E = FK edges.
 // All node lookups are O(1) via the Nodes map.
 type Graph struct {
-	// Nodes is a map from node ID to node, enabling O(1) lookup by ID.
-	Nodes map[string]*Node
-
-	// NodeList is the ordered list of all nodes in deterministic insertion order.
-	// Use NodeList when you need to iterate over all nodes in a stable sequence.
-	NodeList []*Node
-
-	// Edges is the ordered list of all edges in deterministic insertion order.
-	Edges []*Edge
+	Nodes    map[string]*Node `json:"nodes"`
+	NodeList []*Node          `json:"node_list"`
+	Edges    []*Edge          `json:"edges"`
 }
 
 // newGraph creates and returns an empty, fully-initialised Graph.

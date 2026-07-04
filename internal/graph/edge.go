@@ -52,19 +52,10 @@ const (
 
 // Edge represents a directed relationship between two nodes in the schema graph.
 type Edge struct {
-	// From is the node ID of the source node.
-	From string
-
-	// To is the node ID of the destination node.
-	To string
-
-	// Kind is the semantic relationship this edge represents.
-	Kind EdgeKind
-
-	// Metadata carries edge-kind-specific data.
-	// For EdgeKindReferences edges: *FKMetadata.
-	// For all other edge kinds: nil.
-	Metadata any
+	From     string   `json:"from"`
+	To       string   `json:"to"`
+	Kind     EdgeKind `json:"kind"`
+	Metadata any      `json:"metadata,omitempty"`
 }
 
 // FKMetadata carries the full details of a foreign key constraint, stored on
@@ -74,25 +65,9 @@ type Edge struct {
 // convention. The column mapping is stored here as metadata so that renderers
 // can display it without re-parsing the schema.
 type FKMetadata struct {
-	// LocalColumns lists the column names in the referencing (child) table.
-	LocalColumns []string
-
-	// ForeignColumns lists the corresponding column names in the referenced (parent) table.
-	// Position i in LocalColumns maps to position i in ForeignColumns.
-	ForeignColumns []string
-
-	// OnDelete describes the action taken on child rows when the referenced parent row is deleted.
-	OnDelete schema.FKAction
-
-	// OnUpdate describes the action taken on child rows when the referenced parent row is updated.
-	OnUpdate schema.FKAction
-
-	// Cardinality describes the multiplicity of this FK relationship from the
-	// perspective of the referenced (parent) table. Inferred automatically from
-	// the child table's primary key and unique constraints.
-	//   - one_to_one:   FK columns are the complete primary key of the child.
-	//   - one_to_many:  FK columns are not unique in the child (the default).
-	//   - many_to_many: the child is a junction table whose composite PK consists
-	//                   entirely of foreign keys.
-	Cardinality Cardinality `json:"cardinality,omitempty"`
+	LocalColumns   []string         `json:"local_columns"`
+	ForeignColumns []string         `json:"foreign_columns"`
+	OnDelete       schema.FKAction  `json:"on_delete"`
+	OnUpdate       schema.FKAction  `json:"on_update"`
+	Cardinality    Cardinality      `json:"cardinality,omitempty"`
 }
