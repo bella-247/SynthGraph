@@ -114,13 +114,7 @@ func (planError *PlanError) Error() string {
 func BuildPlan(schemaGraph *graph.Graph, schemaModel *schema.Model, rowCount int) (*GenerationPlan, error) {
 	ensureTableMap(schemaModel)
 
-	// Identify table nodes.
-	tableNodes := make(map[string]*graph.Node)
-	for _, node := range schemaGraph.NodeList {
-		if node.Kind == graph.NodeKindTable {
-			tableNodes[node.ID] = node
-		}
-	}
+	tableNodes := collectTableNodes(schemaGraph)
 
 	// Phase 1: Topological sort via Kahn's algorithm.
 	ordered, unresolved := topologicalSort(schemaGraph, tableNodes)
@@ -135,41 +129,18 @@ func BuildPlan(schemaGraph *graph.Graph, schemaModel *schema.Model, rowCount int
 		return &GenerationPlan{Order: allPlans}, nil
 	}
 
-	// Phase 3: Find SCCs among unresolved nodes.
-	unresolvedSet := makeStringSet(unresolved)
-	adjacency := restrictEdgesToSet(schemaGraph, unresolvedSet)
-	components := tarjanSCC(unresolved, adjacency)
-
-	// Phase 4: Separate true cycles from blocked DAG nodes.
-	var trueCycleComponents [][]string
-	var blockedNodeIDs []string
-
-	for _, comp := range components {
-		if len(comp) == 0 {
-			continue
-		}
-		if isTrueCycle(schemaGraph, comp) {
-			trueCycleComponents = append(trueCycleComponents, comp)
-		} else {
-			blockedNodeIDs = append(blockedNodeIDs, comp...)
-		}
-	}
+	// Phase 3-4: Find SCCs among unresolved nodes and separate true cycles
+	// from blocked DAG nodes.
+	trueCycleComponents, blockedNodeIDs := classifyUnresolvedComponents(schemaGraph, unresolved)
 
 	// Phase 5: Resolve each true cycle.
-	availableSet := makeStringSet(ordered)
-	var dfkList []DeferredFK
-
-	for _, cycle := range trueCycleComponents {
-		cyclePlans, cycleDFKs, err := resolveCycle(schemaGraph, schemaModel, cycle, tableNodes, rowCount)
-		if err != nil {
-			return nil, err
-		}
-		allPlans = append(allPlans, cyclePlans...)
-		dfkList = append(dfkList, cycleDFKs...)
-		for _, nodeID := range cycle {
-			availableSet[nodeID] = true
-		}
+	cyclePlans, dfkList, availableSet, err := resolveAllCycles(
+		schemaGraph, schemaModel, trueCycleComponents, tableNodes, ordered, rowCount,
+	)
+	if err != nil {
+		return nil, err
 	}
+	allPlans = append(allPlans, cyclePlans...)
 
 	// Phase 6: Process blocked DAG tables.
 	blockedPlans, err := processBlockedTables(schemaGraph, schemaModel, blockedNodeIDs, availableSet, tableNodes, rowCount)
@@ -182,6 +153,17 @@ func BuildPlan(schemaGraph *graph.Graph, schemaModel *schema.Model, rowCount int
 		Order:       allPlans,
 		DeferredFKs: dfkList,
 	}, nil
+}
+
+// collectTableNodes builds a map of table node IDs to graph.Node from the graph.
+func collectTableNodes(schemaGraph *graph.Graph) map[string]*graph.Node {
+	tableNodes := make(map[string]*graph.Node)
+	for _, node := range schemaGraph.NodeList {
+		if node.Kind == graph.NodeKindTable {
+			tableNodes[node.ID] = node
+		}
+	}
+	return tableNodes
 }
 
 // ensureTableMap builds the TableMap if it hasn't been populated yet.
