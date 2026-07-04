@@ -25,6 +25,8 @@ const (
 	TypeBytea     AbstractType = "bytea"
 	TypeInterval  AbstractType = "interval"
 	TypeEnum      AbstractType = "enum"
+	TypeInet      AbstractType = "inet"
+	TypeMacAddr   AbstractType = "macaddr"
 	TypeUnknown   AbstractType = "unknown"
 )
 
@@ -74,9 +76,9 @@ var typeMap = map[string]AbstractType{
 	"json":               TypeJSON,
 	"jsonb":              TypeJSONB,
 	"bytea":              TypeBytea,
-	"inet":               TypeText,
+	"inet":               TypeInet,
 	"cidr":               TypeText,
-	"macaddr":            TypeText,
+	"macaddr":            TypeMacAddr,
 }
 
 // IsSerialType returns true if the PostgreSQL type name is a SERIAL variant.
