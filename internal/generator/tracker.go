@@ -41,11 +41,11 @@ func (tracker *uniqueTracker) record(column string, value any) {
 	tracker.seen[column][value] = true
 }
 
-// makeStringSet converts a string slice to a set.
-func makeStringSet(values []string) map[string]bool {
-	s := make(map[string]bool, len(values))
-	for _, v := range values {
-		s[v] = true
+func isPrimaryKeyColumn(columnName string, pk []string) bool {
+	for _, pkCol := range pk {
+		if pkCol == columnName {
+			return true
+		}
 	}
-	return s
+	return false
 }
