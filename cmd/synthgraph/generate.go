@@ -23,6 +23,7 @@ type generateConfig struct {
 	rows       int
 	seed       int64
 	schemaName string
+	verbose    bool
 }
 
 func runGenerate(args []string) {
@@ -31,25 +32,32 @@ func runGenerate(args []string) {
 		if errors.Is(err, flag.ErrHelp) {
 			return
 		}
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		globalLogger.Error("%v", err)
 		os.Exit(1)
 	}
 
-	if err := config.validate(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+	if config.verbose {
+		globalLogger = NewLogger(LevelDebug)
 	}
 
 	dataset, model, err := generateData(config)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: generation failed: %v\n", err)
+		globalLogger.Error("generation failed: %v", err)
+		os.Exit(1)
+	}
+
+	globalLogger.Info("generated %d table(s)", len(dataset.Tables))
+	if len(dataset.Tables) == 0 {
+		globalLogger.Error("no tables were generated")
 		os.Exit(1)
 	}
 
 	if err := exportData(config, dataset, model); err != nil {
-		fmt.Fprintf(os.Stderr, "error: export failed: %v\n", err)
+		globalLogger.Error("export failed: %v", err)
 		os.Exit(1)
 	}
+
+	globalLogger.Debug("output format: %s", config.format)
 }
 
 func parseGenerateFlags(args []string) (*generateConfig, error) {
@@ -69,6 +77,8 @@ func parseGenerateFlags(args []string) (*generateConfig, error) {
 	flags.Int64Var(&config.seed, "seed", 42, "Global random seed for determinism")
 	flags.Int64Var(&config.seed, "s", 42, "Global random seed for determinism")
 	flags.StringVar(&config.schemaName, "schema-name", "", "Schema name for SQL output (optional)")
+	flags.BoolVar(&config.verbose, "v", false, "Enable verbose logging")
+	flags.BoolVar(&config.verbose, "verbose", false, "Enable verbose logging")
 
 	if err := flags.Parse(args); err != nil {
 		return nil, err

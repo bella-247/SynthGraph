@@ -7,6 +7,9 @@ import (
 
 const version = "0.1.0"
 
+// globalLogger is the shared logger for all subcommands.
+var globalLogger = NewLogger(LevelInfo)
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -24,7 +27,7 @@ func main() {
 	case "version":
 		runVersion()
 	default:
-		fmt.Fprintf(os.Stderr, "error: unknown subcommand %q\n", subcommand)
+		globalLogger.Error("unknown subcommand %q", subcommand)
 		printUsage()
 		os.Exit(1)
 	}
