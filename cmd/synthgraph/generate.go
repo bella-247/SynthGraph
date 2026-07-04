@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
 
 	"synthgraph/internal/exporter"
@@ -40,10 +42,17 @@ func runGenerate(args []string) {
 		os.Exit(1)
 	}
 
-	dataset, model, err := generateData(config)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	dataset, model, err := generateData(ctx, config)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: generation failed: %v\n", err)
-		os.Exit(1)
+		if errors.Is(err, generator.ErrCancelled) {
+			fmt.Fprintf(os.Stderr, "\nwarning: generation cancelled — exporting partial data (%d tables)\n", len(dataset.Tables))
+		} else {
+			fmt.Fprintf(os.Stderr, "error: generation failed: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	if err := exportData(config, dataset, model); err != nil {
@@ -97,7 +106,7 @@ func (c *generateConfig) validate() error {
 	return nil
 }
 
-func generateData(config *generateConfig) (*generator.Dataset, *schema.Model, error) {
+func generateData(ctx context.Context, config *generateConfig) (*generator.Dataset, *schema.Model, error) {
 	model, err := parseSQLFile(config.input)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parsing schema: %w", err)
@@ -118,14 +127,15 @@ func generateData(config *generateConfig) (*generator.Dataset, *schema.Model, er
 		return nil, nil, fmt.Errorf("building generation plan: %w", err)
 	}
 
-	ctx := &generator.GenerationContext{
+	genCtx := &generator.GenerationContext{
+		Context:       ctx,
 		GlobalSeed:    uint64(config.seed),
 		Model:         model,
 		Graph:         g,
 		SemanticGraph: sg,
 	}
 
-	dataset, err := generator.Generate(plan, ctx)
+	dataset, err := generator.Generate(plan, genCtx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("generating data: %w", err)
 	}

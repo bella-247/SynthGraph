@@ -1,6 +1,15 @@
 package generator
 
-import "synthgraph/internal/planner"
+import (
+	"context"
+	"errors"
+
+	"synthgraph/internal/planner"
+)
+
+// ErrCancelled is returned by Generate when the context is cancelled.
+// The caller may still use the partial Dataset returned alongside this error.
+var ErrCancelled = errors.New("generation cancelled")
 
 // Generate consumes a GenerationPlan and GenerationContext and produces a
 // complete Dataset with all rows for every table.
@@ -9,6 +18,10 @@ import "synthgraph/internal/planner"
 // referenced tables are already populated when FK-dependent tables are
 // generated. For cyclic tables, the breakpoint FK column is inserted as
 // NULL and backfilled in the final phase.
+//
+// If ctx.Context is cancelled during generation, Generate returns the
+// partial Dataset along with ErrCancelled. The caller may still export
+// the partial data.
 func Generate(plan *planner.GenerationPlan, ctx *GenerationContext) (*Dataset, error) {
 	// Pre-compute FK column → referenced table mapping for efficient lookups.
 	fkMap := buildFKColumnMap(ctx.Graph)
@@ -25,6 +38,10 @@ func Generate(plan *planner.GenerationPlan, ctx *GenerationContext) (*Dataset, e
 
 	// Phase 1: Generate each table in planner order.
 	for _, tablePlan := range plan.Order {
+		if isCancelled(ctx.Context) {
+			return dataset, ErrCancelled
+		}
+
 		generatedTable, err := generateTable(tablePlan, ctx, fkMap, enumValues, tablePKs)
 		if err != nil {
 			return nil, err
@@ -38,10 +55,22 @@ func Generate(plan *planner.GenerationPlan, ctx *GenerationContext) (*Dataset, e
 
 	// Phase 2: Backfill deferred FK columns.
 	if len(plan.DeferredFKs) > 0 {
+		if isCancelled(ctx.Context) {
+			return dataset, ErrCancelled
+		}
 		if err := backfillDeferredFKs(dataset, plan.DeferredFKs, tablePKs, ctx); err != nil {
 			return nil, err
 		}
 	}
 
 	return dataset, nil
+}
+
+// isCancelled returns true when the context has been cancelled.
+// A nil context is never cancelled (backward compatible).
+func isCancelled(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	return ctx.Err() != nil
 }
