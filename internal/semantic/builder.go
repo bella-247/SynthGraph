@@ -11,6 +11,9 @@ func Build(sourceGraph *graph.Graph) (*SemanticGraph, error) {
 	semanticGraph := newSemanticGraph(sourceGraph)
 	rules := defaultRules()
 
+	// 0. Precompute all edge-based indexes so rules never scan the graph directly.
+	context := newInferenceContext(sourceGraph)
+
 	// 1. Initialise all semantic nodes (copying from source graph).
 	// We iterate over the stable NodeList to ensure determinism.
 	for _, sourceNode := range sourceGraph.NodeList {
@@ -32,7 +35,7 @@ func Build(sourceGraph *graph.Graph) (*SemanticGraph, error) {
 
 		// Apply each rule in registration order.
 		for _, rule := range rules {
-			inferences := rule.Apply(semanticNode, sourceGraph)
+			inferences := rule.Apply(semanticNode, context)
 			for _, inference := range inferences {
 				semanticNode.Inferences = append(semanticNode.Inferences, inference)
 				applyInferenceToNode(semanticNode, inference)
@@ -49,7 +52,7 @@ func Build(sourceGraph *graph.Graph) (*SemanticGraph, error) {
 
 		relationship := &SemanticRelationship{
 			Edge: sourceEdge,
-			Kind: inferRelationshipKind(sourceEdge, sourceGraph),
+			Kind: inferRelationshipKind(sourceEdge, context),
 		}
 		semanticGraph.Relationships = append(semanticGraph.Relationships, relationship)
 	}

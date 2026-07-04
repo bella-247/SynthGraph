@@ -1,9 +1,6 @@
 package semantic
 
 import (
-	"strconv"
-	"strings"
-
 	"synthgraph/internal/graph"
 )
 
@@ -23,20 +20,20 @@ type JunctionRule struct{}
 
 func (junctionRule *JunctionRule) Name() string { return "junction_rule" }
 
-func (junctionRule *JunctionRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
+func (junctionRule *JunctionRule) Apply(tableNode *SemanticNode, context *InferenceContext) []Inference {
 	tableData, isTableNode := tableNode.Data.(graph.TableData)
 	if !isTableNode || len(tableData.PrimaryKey) < 2 {
 		// Junction tables always have a composite PK (at least 2 columns).
 		return nil
 	}
 
-	allForeignKeyColumnsOnTable := buildForeignKeyColumnIndex(tableNode.ID, sourceGraph)
+	foreignKeyColumnIndex := context.ForeignKeyColumnIndex[tableNode.ID]
 
 	evidenceLines := make([]string, 0, len(tableData.PrimaryKey)+1)
 	allPrimaryKeyColumnsAreForeignKeys := true
 
 	for _, primaryKeyColumn := range tableData.PrimaryKey {
-		if !allForeignKeyColumnsOnTable[primaryKeyColumn] {
+		if !foreignKeyColumnIndex[primaryKeyColumn] {
 			allPrimaryKeyColumnsAreForeignKeys = false
 			break
 		}
@@ -69,18 +66,12 @@ type HierarchyRule struct{}
 
 func (hierarchyRule *HierarchyRule) Name() string { return "hierarchy_rule" }
 
-func (hierarchyRule *HierarchyRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
+func (hierarchyRule *HierarchyRule) Apply(tableNode *SemanticNode, context *InferenceContext) []Inference {
 	if tableNode.Kind != graph.NodeKindTable {
 		return nil
 	}
 
-	selfReferencingFKCount := 0
-	for _, edge := range sourceGraph.Edges {
-		if edge.Kind == graph.EdgeKindReferences && edge.From == tableNode.ID && edge.To == tableNode.ID {
-			selfReferencingFKCount++
-		}
-	}
-
+	selfReferencingFKCount := context.SelfRefCount[tableNode.ID]
 	if selfReferencingFKCount == 0 {
 		return nil
 	}
@@ -109,16 +100,16 @@ type LookupRule struct{}
 
 func (lookupRule *LookupRule) Name() string { return "lookup_rule" }
 
-func (lookupRule *LookupRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
+func (lookupRule *LookupRule) Apply(tableNode *SemanticNode, context *InferenceContext) []Inference {
 	_, isTableNode := tableNode.Data.(graph.TableData)
 	if !isTableNode {
 		return nil
 	}
 
-	outgoingFKCount := countEdgesFrom(tableNode.ID, graph.EdgeKindReferences, sourceGraph)
-	incomingFKCount := countEdgesTo(tableNode.ID, graph.EdgeKindReferencedBy, sourceGraph)
-	columnCount := countEdgesFrom(tableNode.ID, graph.EdgeKindContains, sourceGraph)
-	temporalPattern := detectTemporalPattern(tableNode.ID, sourceGraph)
+	outgoingFKCount := context.OutgoingForeignKeyCount[tableNode.ID]
+	incomingFKCount := context.IncomingForeignKeyCount[tableNode.ID]
+	columnCount := context.ColumnCount[tableNode.ID]
+	temporalPattern := context.TemporalPattern[tableNode.ID]
 	hasTemporalColumns := temporalPattern.HasCreatedAt || temporalPattern.HasUpdatedAt
 
 	confidence := 0.0
@@ -170,15 +161,15 @@ type TransactionalRule struct{}
 
 func (transactionalRule *TransactionalRule) Name() string { return "transactional_rule" }
 
-func (transactionalRule *TransactionalRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
+func (transactionalRule *TransactionalRule) Apply(tableNode *SemanticNode, context *InferenceContext) []Inference {
 	tableData, isTableNode := tableNode.Data.(graph.TableData)
 	if !isTableNode {
 		return nil
 	}
 
-	temporalPattern := detectTemporalPattern(tableNode.ID, sourceGraph)
-	outgoingFKCount := countEdgesFrom(tableNode.ID, graph.EdgeKindReferences, sourceGraph)
-	isJunction := hasJunctionSignal(tableData)
+	temporalPattern := context.TemporalPattern[tableNode.ID]
+	outgoingFKCount := context.OutgoingForeignKeyCount[tableNode.ID]
+	isJunction := hasJunctionSignal(tableData, context.ForeignKeyColumnIndex[tableNode.ID])
 
 	confidence := 0.0
 	evidenceLines := make([]string, 0, 4)
@@ -224,7 +215,7 @@ type EntityRule struct{}
 
 func (entityRule *EntityRule) Name() string { return "entity_rule" }
 
-func (entityRule *EntityRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
+func (entityRule *EntityRule) Apply(tableNode *SemanticNode, context *InferenceContext) []Inference {
 	if tableNode.Kind != graph.NodeKindTable {
 		return nil
 	}
@@ -237,81 +228,45 @@ func (entityRule *EntityRule) Apply(tableNode *SemanticNode, sourceGraph *graph.
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
 
-// buildForeignKeyColumnIndex returns a set of all column names that are
-// foreign key source columns for the given table node ID.
-func buildForeignKeyColumnIndex(tableNodeID string, sourceGraph *graph.Graph) map[string]bool {
-	foreignKeyColumnIndex := make(map[string]bool)
-	for _, edge := range sourceGraph.Edges {
-		if edge.Kind != graph.EdgeKindReferences || edge.From != tableNodeID {
-			continue
-		}
-		foreignKeyMetadata, hasFKMetadata := edge.Metadata.(*graph.FKMetadata)
-		if !hasFKMetadata {
-			continue
-		}
-		for _, columnName := range foreignKeyMetadata.LocalColumns {
-			foreignKeyColumnIndex[columnName] = true
+// hasJunctionSignal returns true if the table's composite primary key consists
+// entirely of foreign key columns. This is a proper structural check — it
+// verifies that every column in the PK also participates as a source column in
+// at least one foreign key constraint, rather than just checking PK length.
+func hasJunctionSignal(tableData graph.TableData, foreignKeyColumnIndex map[string]bool) bool {
+	if len(tableData.PrimaryKey) < 2 {
+		return false
+	}
+	for _, primaryKeyColumn := range tableData.PrimaryKey {
+		if !foreignKeyColumnIndex[primaryKeyColumn] {
+			return false
 		}
 	}
-	return foreignKeyColumnIndex
-}
-
-// detectTemporalPattern scans the column labels of a table to detect
-// time-tracking columns. Column names are compared case-insensitively.
-func detectTemporalPattern(tableNodeID string, sourceGraph *graph.Graph) TemporalPattern {
-	pattern := TemporalPattern{}
-	for _, edge := range sourceGraph.Edges {
-		if edge.Kind != graph.EdgeKindContains || edge.From != tableNodeID {
-			continue
-		}
-		columnNode, exists := sourceGraph.Nodes[edge.To]
-		if !exists {
-			continue
-		}
-		lowerColumnName := strings.ToLower(columnNode.Label)
-		switch lowerColumnName {
-		case "created_at":
-			pattern.HasCreatedAt = true
-		case "updated_at":
-			pattern.HasUpdatedAt = true
-		case "deleted_at":
-			pattern.HasDeletedAt = true
-		}
-	}
-	return pattern
-}
-
-// hasJunctionSignal returns true if the table's primary key structure matches
-// the junction table pattern (composite PK where all PK cols are FK cols).
-// This is used by the TransactionalRule to exclude junction tables.
-func hasJunctionSignal(tableData graph.TableData) bool {
-	return len(tableData.PrimaryKey) >= 2
-}
-
-// countEdgesFrom counts edges of the given kind that originate from the given node ID.
-func countEdgesFrom(fromNodeID string, kind graph.EdgeKind, sourceGraph *graph.Graph) int {
-	count := 0
-	for _, edge := range sourceGraph.Edges {
-		if edge.Kind == kind && edge.From == fromNodeID {
-			count++
-		}
-	}
-	return count
-}
-
-// countEdgesTo counts edges of the given kind that point to the given node ID.
-func countEdgesTo(toNodeID string, kind graph.EdgeKind, sourceGraph *graph.Graph) int {
-	count := 0
-	for _, edge := range sourceGraph.Edges {
-		if edge.Kind == kind && edge.To == toNodeID {
-			count++
-		}
-	}
-	return count
+	return true
 }
 
 // countString converts an integer to its string representation. This small helper
 // keeps inline string concatenation in evidence messages readable.
 func countString(value int) string {
-	return strconv.Itoa(value)
+	if value == 1 {
+		return "1"
+	}
+	// For small ints (the only use case here), a simple conversion is sufficient.
+	result := ""
+	absoluteValue := value
+	if absoluteValue < 0 {
+		result = "-"
+		absoluteValue = -absoluteValue
+	}
+	digits := make([]byte, 0, 10)
+	for absoluteValue > 0 {
+		digits = append(digits, byte('0'+absoluteValue%10))
+		absoluteValue /= 10
+	}
+	if len(digits) == 0 {
+		digits = append(digits, '0')
+	}
+	for index := len(digits) - 1; index >= 0; index-- {
+		result += string(digits[index])
+	}
+	return result
 }

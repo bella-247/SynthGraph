@@ -7,7 +7,7 @@ import (
 
 // inferRelationshipKind translates the structural cardinality of a foreign key
 // edge into a semantic RelationshipKind.
-func inferRelationshipKind(edge *graph.Edge, sourceGraph *graph.Graph) RelationshipKind {
+func inferRelationshipKind(edge *graph.Edge, context *InferenceContext) RelationshipKind {
 	// 1. Check for self-referencing hierarchy first.
 	if edge.From == edge.To {
 		return RelationshipKindHierarchy
@@ -24,7 +24,7 @@ func inferRelationshipKind(edge *graph.Edge, sourceGraph *graph.Graph) Relations
 		return RelationshipKindManyToMany
 	}
 
-	isNullable := isForeignKeyNullable(edge, foreignKeyMetadata, sourceGraph)
+	isNullable := isForeignKeyNullable(edge, foreignKeyMetadata, context.Graph)
 
 	// 3. Composition vs Association/Aggregation
 	// If the foreign key is strictly required (NOT NULL on all source columns)

@@ -12,12 +12,12 @@ type TemporalRule struct{}
 
 func (temporalRule *TemporalRule) Name() string { return "temporal_rule" }
 
-func (temporalRule *TemporalRule) Apply(tableNode *SemanticNode, sourceGraph *graph.Graph) []Inference {
+func (temporalRule *TemporalRule) Apply(tableNode *SemanticNode, context *InferenceContext) []Inference {
 	if tableNode.Kind != graph.NodeKindTable {
 		return nil
 	}
 
-	pattern := detectTemporalPattern(tableNode.ID, sourceGraph)
+	pattern := context.TemporalPattern[tableNode.ID]
 	hasCreatedAt := pattern.HasCreatedAt
 	hasUpdatedAt := pattern.HasUpdatedAt
 	hasDeletedAt := pattern.HasDeletedAt
