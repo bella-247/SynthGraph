@@ -17,18 +17,7 @@ func checkUnique(table *generator.GeneratedTable, tableDef *schema.Table, result
 		seen := make(map[string]int)
 
 		for rowIndex, row := range table.Rows {
-			// Build the key for this unique constraint's column set.
-			var key string
-			if len(uniqueColumns) == 1 {
-				key = fmt.Sprintf("%v", row[uniqueColumns[0]])
-			} else {
-				for i, col := range uniqueColumns {
-					if i > 0 {
-						key += "::"
-					}
-					key += fmt.Sprintf("%v", row[col])
-				}
-			}
+			key := compositeKey(row, uniqueColumns)
 
 			if firstRow, seenBefore := seen[key]; seenBefore {
 				result.addError(

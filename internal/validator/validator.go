@@ -156,17 +156,7 @@ func buildPKIndex(dataset *generator.Dataset, model *schema.Model) map[string]ma
 
 // pkString produces a deterministic string key for a row's PK values.
 func pkString(row generator.GeneratedRow, pkColumns []string) string {
-	if len(pkColumns) == 1 {
-		return fmt.Sprintf("%v", row[pkColumns[0]])
-	}
-	key := ""
-	for i, col := range pkColumns {
-		if i > 0 {
-			key += "::"
-		}
-		key += fmt.Sprintf("%v", row[col])
-	}
-	return key
+	return compositeKey(row, pkColumns)
 }
 
 // findTable finds a GeneratedTable by name in the dataset, or nil.
@@ -177,4 +167,20 @@ func findTable(dataset *generator.Dataset, tableName string) *generator.Generate
 		}
 	}
 	return nil
+}
+
+// compositeKey builds a deterministic string key from a row for a set of columns.
+// Single-column keys use the raw value; composite keys join values with "::".
+func compositeKey(row generator.GeneratedRow, columns []string) string {
+	if len(columns) == 1 {
+		return fmt.Sprintf("%v", row[columns[0]])
+	}
+	key := ""
+	for index, column := range columns {
+		if index > 0 {
+			key += "::"
+		}
+		key += fmt.Sprintf("%v", row[column])
+	}
+	return key
 }
