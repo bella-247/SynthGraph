@@ -70,9 +70,10 @@ func generateTable(
 				}
 			}
 
-			// Retry on UNIQUE violation.
-			if tracker.isUniqueColumn(column.Name) {
-				for attempts := 0; attempts < 10; attempts++ {
+	// Retry on UNIQUE violation.
+		if tracker.isUniqueColumn(column.Name) {
+			const maxUniqueRetries = 10
+			for attempts := 0; attempts < maxUniqueRetries; attempts++ {
 					if !tracker.checkSeen(column.Name, value) {
 						break
 					}
