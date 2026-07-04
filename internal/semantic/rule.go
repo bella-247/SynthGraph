@@ -12,12 +12,15 @@ type InferenceContext struct {
 	// Graph is the original graph.Graph that the SemanticGraph was built from.
 	Graph *graph.Graph
 
-	// OutgoingForeignKeyCount is the number of EdgeKindReferences edges
+	// OutgoingForeignKeyCount is the number of foreign key constraints
 	// originating from a table node (how many other tables this table depends on).
+	// Counted from EdgeKindReferences edges only (not from the duplicate
+	// EdgeKindReferencedBy or EdgeKindDependsOn edges).
 	OutgoingForeignKeyCount map[string]int
 
-	// IncomingForeignKeyCount is the number of EdgeKindReferencedBy edges
+	// IncomingForeignKeyCount is the number of foreign key constraints
 	// pointing to a table node (how many other tables reference this table).
+	// Counted from EdgeKindReferences edges only.
 	IncomingForeignKeyCount map[string]int
 
 	// ColumnCount is the number of EdgeKindContains edges from a table node
@@ -41,6 +44,14 @@ type InferenceContext struct {
 
 // newInferenceContext builds all precomputed indexes from the source graph
 // in a single O(E) pass where E is the number of edges.
+//
+// IMPORTANT: Each FK constraint produces three graph edges
+// (EdgeKindReferences, EdgeKindReferencedBy, EdgeKindDependsOn).
+// We count each FK constraint exactly once to avoid double-counting.
+// EdgeKindReferencedBy and EdgeKindDependsOn are skipped for metric
+// counting (the counting happens on the corresponding EdgeKindReferences
+// edge), but FK column metadata is still populated on all edge kinds
+// to build the ForeignKeyColumnIndex regardless of edge processing order.
 func newInferenceContext(sourceGraph *graph.Graph) *InferenceContext {
 	context := &InferenceContext{
 		Graph:                   sourceGraph,
@@ -67,10 +78,17 @@ func newInferenceContext(sourceGraph *graph.Graph) *InferenceContext {
 			}
 
 		case graph.EdgeKindReferencedBy:
-			// referenced_by is the reverse — counts toward incoming for the
-			// source and outgoing for the target.
-			context.IncomingForeignKeyCount[edge.From]++
-			context.OutgoingForeignKeyCount[edge.To]++
+			// EdgeKindReferencedBy is the reverse of EdgeKindReferences and
+			// carries the same FKMetadata. Counting was already done on the
+			// References edge to avoid double-counting each FK constraint.
+			// We still process FK column metadata here because the build
+			// order could process ReferencedBy edges before References edges.
+			populateForeignKeyColumnIndex(context, edge)
+
+		case graph.EdgeKindDependsOn:
+			// EdgeKindDependsOn also carries the same FKMetadata.
+			// Process column metadata for the same reasons as above.
+			populateForeignKeyColumnIndex(context, edge)
 
 		case graph.EdgeKindContains:
 			context.ColumnCount[edge.From]++
