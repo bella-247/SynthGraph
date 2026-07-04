@@ -44,69 +44,33 @@ const (
 // that downstream renderers and analyzers can use without re-parsing
 // the original schema.
 type Node struct {
-	// ID is the globally unique, deterministic identifier for this node.
-	// Formats:
-	//   - Tables:  "table:{name}"
-	//   - Columns: "column:{table_name}.{column_name}"
-	//   - Enums:   "enum:{name}"
-	ID string
-
-	// Kind identifies what database object this node represents.
-	Kind NodeKind
-
-	// Label is the human-readable display name (typically just the object name
-	// without any schema prefix).
-	Label string
-
-	// Data carries kind-specific metadata. Cast to the appropriate concrete type:
-	//   - NodeKindTable:  TableData
-	//   - NodeKindColumn: ColumnData
-	//   - NodeKindEnum:   EnumData
-	Data any
+	ID    string   `json:"id"`
+	Kind  NodeKind `json:"kind"`
+	Label string   `json:"label"`
+	Data  any      `json:"data"`
 }
 
 // TableData carries all table-level metadata needed by downstream renderers.
 type TableData struct {
-	// Name is the fully-qualified table name (e.g. "public.users" or "users").
-	Name string
-
-	// PrimaryKey lists the column names that form the primary key.
-	PrimaryKey []string
-
-	// Unique lists each unique constraint as a set of column names.
-	Unique [][]string
-
-	// Checks lists CHECK constraint expressions preserved from the schema.
-	Checks []schema.CheckConstraint
+	Name       string                    `json:"name"`
+	PrimaryKey []string                  `json:"primary_key"`
+	Unique     [][]string                `json:"unique,omitempty"`
+	Checks     []schema.CheckConstraint  `json:"checks,omitempty"`
 }
 
 // ColumnData carries all column-level metadata needed by downstream renderers.
 type ColumnData struct {
-	// Type is the canonical abstract type name (e.g. "int", "varchar", "boolean").
-	Type string
-
-	// Length is the declared length for types like VARCHAR(n).
-	// Zero means no length was specified.
-	Length int
-
-	// Precision is the declared precision for types like DECIMAL(p,s).
-	// Zero means no precision was specified.
-	Precision int
-
-	// Nullable is true if the column accepts NULL values.
-	Nullable bool
-
-	// Default is the raw default expression string, or nil if no default was declared.
-	Default *string
-
-	// IsPrimaryKey is true if this column is part of the table's primary key.
-	IsPrimaryKey bool
+	Type         string   `json:"type"`
+	Length       int      `json:"length,omitempty"`
+	Precision    int      `json:"precision,omitempty"`
+	Nullable     bool     `json:"nullable"`
+	Default      *string  `json:"default,omitempty"`
+	IsPrimaryKey bool     `json:"is_primary_key"`
 }
 
 // EnumData carries all enum-level metadata needed by downstream renderers.
 type EnumData struct {
-	// Values lists the valid string values for this enum type, in declaration order.
-	Values []string
+	Values []string `json:"values"`
 }
 
 // tableNodeID returns the deterministic node ID for a table node.

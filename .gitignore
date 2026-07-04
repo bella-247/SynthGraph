@@ -36,3 +36,4 @@ graphify-out/
 # Project-specific
 .agents/
 CLAUDE.md
+.claude/
