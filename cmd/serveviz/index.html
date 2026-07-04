@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SynthGraph — Schema Visualizer</title>
+<script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"></script>
+<script src="https://unpkg.com/cytoscape-fcose/cytoscape-fcose.js"></script>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;user-select:text;-webkit-user-select:text}
+body{
+  background:#0d1117;
+  color:#c9d1d9;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  overflow:hidden;width:100%;height:100%;
+  user-select:text;-webkit-user-select:text;
+}
+input,textarea{user-select:text;-webkit-user-select:text}
+
+/* ─── Cytoscape + overlays container ─── */
+#cy{width:100%;height:100%;position:absolute;inset:0}
+#overlays{position:absolute;inset:0;z-index:10;pointer-events:none}
+#overlays>*{pointer-events:auto}
+
+/* ─── Top bar ─── */
+#topbar{
+  position:fixed;top:0;left:0;right:0;z-index:20;
+  display:flex;align-items:center;gap:12px;
+  padding:10px 16px;
+  background:rgba(13,17,23,0.92);
+  border-bottom:1px solid #21262d;
+  pointer-events:none;
+}
+#topbar>*{pointer-events:auto}
+#topbar .logo{
+  font-weight:700;font-size:14px;color:#e6edf3;
+  display:flex;align-items:center;gap:8px;
+}
+#topbar .logo svg{width:20px;height:20px}
+#topbar .sub{font-size:11px;color:#8b949e;font-weight:400}
+#topbar .sep{width:1px;height:20px;background:#21262d}
+.stats{display:flex;gap:10px;font-size:11px;color:#8b949e}
+.stats strong{color:#e6edf3;font-weight:600}
+.stats span{display:flex;align-items:center;gap:4px}
+
+/* ─── Detail panel ─── */
+#detail{
+  position:fixed;top:0;right:-380px;width:360px;height:100%;z-index:30;
+  background:#161b22;border-left:1px solid #21262d;
+  padding:24px 20px;overflow-y:auto;
+  transition:right .25s ease;
+  box-shadow:-4px 0 12px rgba(0,0,0,.3);
+}
+#detail.open{right:0}
+#detail .close-btn{
+  position:absolute;top:14px;right:14px;
+  background:none;border:none;color:#8b949e;font-size:18px;cursor:pointer;
+  padding:4px 8px;border-radius:4px;
+}
+#detail .close-btn:hover{background:#21262d;color:#e6edf3}
+#detail h2{font-size:18px;font-weight:600;margin-bottom:2px;color:#e6edf3}
+#detail .node-path{font-size:11px;color:#8b949e;margin-bottom:16px;word-break:break-all}
+#detail .section{margin-bottom:16px}
+#detail .section h3{
+  font-size:10px;text-transform:uppercase;letter-spacing:.8px;
+  color:#8b949e;margin-bottom:6px;font-weight:600;
+}
+#detail .col-row{
+  display:flex;align-items:center;gap:8px;
+  padding:5px 8px;border-radius:4px;font-size:12px;
+}
+#detail .col-row:hover{background:rgba(255,255,255,0.03)}
+#detail .col-row .badge{
+  width:18px;height:18px;border-radius:3px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:9px;font-weight:700;
+}
+#detail .col-row .badge.pk{background:rgba(210,153,34,0.15);color:#d29922}
+#detail .col-row .badge.fk{background:rgba(88,166,255,0.15);color:#58a6ff}
+#detail .col-row .col-name{flex:1;color:#e6edf3;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#detail .col-row .col-type{color:#8b949e;font-size:10px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+#detail .fk-block{
+  padding:6px 8px;border-radius:4px;font-size:12px;
+  background:rgba(88,166,255,0.06);border:1px solid rgba(88,166,255,0.12);margin-bottom:4px;
+}
+#detail .fk-block .src{color:#8b949e}
+#detail .fk-block .arrow{color:#484f58;margin:0 4px}
+#detail .fk-block .tgt{color:#e6edf3}
+#detail .fk-block .meta{color:#8b949e;font-size:10px;margin-left:6px}
+#detail .fk-block .card{float:right;color:#484f58;font-size:10px}
+
+/* ─── Table card ─── */
+.table-card{
+  position:absolute;transform:translate(-50%,-50%);
+  width:230px;
+  background:#161b22;
+  border:1px solid #30363d;border-radius:6px;
+  box-shadow:0 4px 12px rgba(0,0,0,.3);
+  transition:transform .15s,box-shadow .15s,border-color .15s,opacity .15s;
+  overflow:hidden;cursor:pointer;
+  user-select:text;-webkit-user-select:text;
+}
+.table-card:hover{
+  transform:translate(-50%,-50%) scale(1.02);
+  box-shadow:0 6px 20px rgba(0,0,0,.5);
+  border-color:#58a6ff;z-index:100;
+}
+.table-card.highlight{border-color:#58a6ff!important;box-shadow:0 0 0 1px #58a6ff,0 4px 12px rgba(0,0,0,.3)!important}
+.table-card.dim{opacity:0.25;filter:grayscale(.6)}
+.table-header{
+  display:flex;align-items:center;gap:8px;
+  padding:10px 12px 8px;
+  font-size:13px;font-weight:600;color:#e6edf3;
+  border-bottom:1px solid #21262d;
+}
+.table-header .icon{
+  width:18px;height:18px;border-radius:4px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:10px;color:#fff;
+}
+.table-body{padding:2px 0}
+.col-row{
+  display:flex;align-items:center;gap:6px;
+  padding:4px 12px;font-size:11px;
+  transition:background .12s;user-select:text;-webkit-user-select:text;
+}
+.col-row:hover{background:rgba(255,255,255,0.03)}
+.col-row .badge{
+  width:14px;height:14px;border-radius:3px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:7px;font-weight:700;
+}
+.col-row .badge.pk{background:rgba(210,153,34,0.15);color:#d29922}
+.col-row .badge.fk{background:rgba(88,166,255,0.15);color:#58a6ff}
+.col-row .badge.pkfk{background:linear-gradient(135deg,rgba(210,153,34,0.2),rgba(88,166,255,0.2));color:#d29922}
+.col-row .col-name{flex:1;color:#c9d1d9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.col-row .col-type{color:#8b949e;font-size:9px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.col-row .nullable-dot{width:3px;height:3px;border-radius:50%;background:#484f58;flex-shrink:0}
+
+/* ─── Legend ─── */
+#legend{
+  position:fixed;bottom:16px;left:16px;z-index:20;
+  background:#161b22;border:1px solid #30363d;border-radius:6px;
+  padding:10px 14px;font-size:11px;min-width:150px;
+}
+#legend h3{
+  font-size:9px;text-transform:uppercase;letter-spacing:1px;
+  color:#8b949e;margin-bottom:8px;font-weight:600;
+}
+.legend-item{display:flex;align-items:center;gap:8px;margin-bottom:4px;color:#8b949e;font-size:11px}
+.legend-item:last-child{margin-bottom:0}
+.legend-line{width:24px;height:2px;border-radius:1px;flex-shrink:0}
+.legend-line.dashed{border-top:2px dashed;height:0;width:22px;background:transparent}
+.legend-line.dotted{border-top:2px dotted;height:0;width:22px;background:transparent}
+.legend-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+.legend-divider{margin-top:6px;padding-top:6px;border-top:1px solid #21262d}
+
+/* ─── Controls ─── */
+#controls{
+  position:fixed;bottom:16px;right:16px;z-index:20;
+  display:flex;flex-direction:column;gap:6px;
+}
+#controls button{
+  width:34px;height:34px;border-radius:6px;
+  border:1px solid #30363d;background:#161b22;
+  color:#8b949e;font-size:16px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .15s;
+}
+#controls button:hover{background:#21262d;border-color:#58a6ff;color:#e6edf3}
+
+/* ─── Tooltip ─── */
+#tooltip{
+  position:fixed;z-index:50;pointer-events:none;
+  background:#161b22;border:1px solid #30363d;border-radius:6px;
+  padding:6px 10px;font-size:11px;color:#8b949e;
+  opacity:0;transition:opacity .12s;max-width:260px;
+}
+#tooltip.visible{opacity:1}
+
+/* ─── Edge labels (on-canvas) ─── */
+.edge-label{font-size:10px;font-weight:600;color:#8b949e;text-shadow:0 0 6px rgba(0,0,0,.9);pointer-events:none}
+
+/* ─── Scrollbar ─── */
+#detail::-webkit-scrollbar{width:4px}
+#detail::-webkit-scrollbar-track{background:transparent}
+#detail::-webkit-scrollbar-thumb{background:#21262d;border-radius:2px}
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div id="topbar">
+  <div class="logo">
+    <svg viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6" stroke="#58a6ff" stroke-width="1.5"/><circle cx="8" cy="8" r="2" fill="#58a6ff"/></svg>
+    SynthGraph
+    <span class="sub">Schema Visualizer</span>
+  </div>
+  <div class="sep"></div>
+  <div class="stats" id="stats"></div>
+</div>
+
+<!-- Main -->
+<div id="cy-container">
+  <div id="cy"></div>
+  <div id="overlays"></div>
+</div>
+
+<!-- Legend -->
+<div id="legend">
+  <h3>Legend</h3>
+  <div class="legend-item"><div class="legend-line" style="background:#58a6ff"></div> Foreign Key</div>
+  <div class="legend-item"><div class="legend-line" style="background:#d29922;width:18px"></div> One-to-One</div>
+  <div class="legend-item"><div class="legend-line" style="background:#3fb950"></div> Enum Usage</div>
+  <div class="legend-item"><div class="legend-line dashed" style="border-color:#484f58"></div> Contains</div>
+  <div class="legend-divider">
+    <div class="legend-item"><div class="legend-dot" style="background:#d29922"></div> Primary Key</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#58a6ff"></div> Foreign Key</div>
+  </div>
+</div>
+
+<!-- Controls -->
+<div id="controls">
+  <button onclick="fitGraph()" title="Fit to View">&#8862;</button>
+  <button onclick="resetLayout()" title="Re-layout">&#8634;</button>
+</div>
+
+<!-- Detail Panel -->
+<div id="detail">
+  <button class="close-btn" onclick="closeDetail()">&#10005;</button>
+  <div id="detail-content"></div>
+</div>
+
+<!-- Tooltip -->
+<div id="tooltip"></div>
+
+<script>
+// ─── Graph data ───
+let graphData = null;
+let cy = null;
+let nodeCards = new Map();
+let tableColumns = new Map();
+let tableFKs = new Map();
+let columnToTable = new Map();
+
+// Fetch and render
+(async function init() {
+  try {
+    const res = await fetch('/api/graph');
+    graphData = await res.json();
+    renderGraph();
+  } catch (err) {
+    document.getElementById('cy').innerHTML =
+      `<div style="color:#f85149;padding:40px;text-align:center">
+        <h2>Failed to load graph</h2>
+        <p style="color:#8b949e;margin-top:8px;font-size:13px">${err.message}</p>
+      </div>`;
+  }
+})();
+
+function renderGraph() {
+  // ─── Process data ───
+  const nodes = graphData.node_list || [];
+  const edges = graphData.edges || [];
+
+  // Index nodes by ID
+  const nodeMap = {};
+  nodes.forEach(n => { nodeMap[n.id] = n; });
+
+  // Build column -> parent table mapping
+  edges.forEach(e => {
+    if (e.kind === 'contains') {
+      columnToTable.set(e.to, e.from);
+    }
+  });
+
+  // Build table -> columns and table -> FK maps
+  edges.forEach(e => {
+    if (e.kind === 'contains') {
+      const tableId = e.from;
+      const colNode = nodeMap[e.to];
+      if (!tableColumns.has(tableId)) tableColumns.set(tableId, []);
+      if (colNode) tableColumns.get(tableId).push(colNode);
+    }
+  });
+  edges.forEach(e => {
+    if (e.kind === 'references') {
+      if (!tableFKs.has(e.from)) tableFKs.set(e.from, []);
+      tableFKs.get(e.from).push(e);
+    }
+  });
+
+  // ─── Build Cytoscape elements ───
+  const cyElements = [];
+  const tableIds = [];
+
+  nodes.forEach(node => {
+    if (node.kind === 'table') {
+      const cols = tableColumns.get(node.id) || [];
+      const outgoingFKs = tableFKs.get(node.id) || [];
+      const incomingFKs = edges.filter(e => e.kind === 'references' && e.to === node.id);
+      const isFK = outgoingFKs.length > 0 || incomingFKs.length > 0;
+
+      cyElements.push({
+        group: 'nodes',
+        data: {
+          id: node.id,
+          label: node.label,
+          kind: 'table',
+          isFK,
+          cols: cols.map(c => ({
+            id: c.id, label: c.label, type: c.data?.type || '',
+            isPK: c.data?.is_primary_key || false,
+            nullable: c.data?.nullable || false,
+            default: c.data?.default || null,
+            length: c.data?.length || 0,
+          })),
+          fks: outgoingFKs.map(e => {
+            const meta = e.metadata || {};
+            return {
+              to: e.to,
+              localCols: meta.local_columns || [],
+              foreignCols: meta.foreign_columns || [],
+              cardinality: meta.cardinality || 'one_to_many',
+            };
+          }),
+          referencedBy: incomingFKs.map(e => {
+            const meta = e.metadata || {};
+            return {
+              from: e.from,
+              localCols: meta.local_columns || [],
+              foreignCols: meta.foreign_columns || [],
+            };
+          }),
+        },
+      });
+      tableIds.push(node.id);
+    } else if (node.kind === 'enum') {
+      cyElements.push({
+        group: 'nodes',
+        data: { id: node.id, label: node.label, kind: 'enum', values: node.data?.values || [] },
+      });
+    }
+  });
+
+  edges.forEach(e => {
+    if (e.kind === 'references') {
+      const meta = e.metadata || {};
+      const cardinality = meta.cardinality || 'one_to_many';
+      const fromNode = nodeMap[e.from];
+      const toNode = nodeMap[e.to];
+      const label = cardinality === 'one_to_one' ? '1—1'
+        : cardinality === 'many_to_many' ? '*—*' : '1—*';
+      cyElements.push({
+        group: 'edges',
+        data: {
+          id: 'ref:' + e.from + ':' + e.to,
+          source: e.from,
+          target: e.to,
+          kind: 'references',
+          cardinality,
+          label,
+          localCols: (meta.local_columns || []).join(', '),
+          foreignCols: (meta.foreign_columns || []).join(', '),
+        },
+      });
+    } else if (e.kind === 'uses_enum') {
+      // Redirect column -> enum to parent table -> enum
+      // Column nodes are not individual cytoscape nodes
+      const columnId = e.from;
+      const parentTableId = columnToTable.get(columnId) || columnId.replace(/^column:/, 'table:').replace(/\.[^.]+$/, '');
+      if (tableIds.includes(parentTableId)) {
+        cyElements.push({
+          group: 'edges',
+          data: {
+            id: 'enum:' + e.from + ':' + e.to,
+            source: parentTableId,
+            target: e.to,
+            kind: 'uses_enum',
+          },
+        });
+      }
+    }
+  });
+
+  // ─── Initialize Cytoscape ───
+  cy = cytoscape({
+    container: document.getElementById('cy'),
+    elements: cyElements,
+    style: [
+      // Table nodes (invisible — rendered as HTML)
+      {
+        selector: 'node[kind = "table"]',
+        style: { opacity: 0, width: 230, height: 120, events: 'no' },
+      },
+      // Enum nodes
+      {
+        selector: 'node[kind = "enum"]',
+        style: {
+          shape: 'diamond',
+          'background-color': 'rgba(63,185,80,0.12)',
+          'border-color': '#3fb950',
+          'border-width': 1.5,
+          color: '#3fb950',
+          'font-size': '11px',
+          'font-weight': '600',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          width: 56, height: 56,
+          label: 'data(label)',
+          'transition-property': 'border-color,background-color',
+          'transition-duration': '0.15s',
+        },
+      },
+      // References edges
+      {
+        selector: 'edge[kind = "references"]',
+        style: {
+          'curve-style': 'unbundled-bezier',
+          'control-point-distances': [30, -30],
+          'control-point-weights': [0.25, 0.75],
+          width: 2,
+          'line-color': '#58a6ff',
+          'target-arrow-color': '#58a6ff',
+          'target-arrow-shape': 'triangle',
+          'arrow-scale': 0.9,
+          opacity: 0.6,
+          'z-index': 5,
+        },
+      },
+      // Cardinality-specific edge styles
+      {
+        selector: 'edge[cardinality = "one_to_one"]',
+        style: {
+          'line-color': '#d29922',
+          'target-arrow-color': '#d29922',
+          width: 2.5,
+        },
+      },
+      {
+        selector: 'edge[cardinality = "many_to_many"]',
+        style: {
+          'line-color': '#f85149',
+          'target-arrow-color': '#f85149',
+          width: 2.5,
+          'line-style': 'dashed',
+        },
+      },
+      // Uses enum edges
+      {
+        selector: 'edge[kind = "uses_enum"]',
+        style: {
+          'curve-style': 'bezier',
+          width: 1.2,
+          'line-color': 'rgba(63,185,80,0.35)',
+          'target-arrow-color': 'rgba(63,185,80,0.35)',
+          'target-arrow-shape': 'triangle',
+          'arrow-scale': 0.7,
+          opacity: 0.4,
+          'line-style': 'dotted',
+        },
+      },
+      // Edge labels
+      {
+        selector: 'edge[kind = "references"]:parent',
+        style: {
+          label: 'data(label)',
+          'font-size': '9px',
+          color: '#8b949e',
+          'text-background-color': 'rgba(13,17,23,0.85)',
+          'text-background-opacity': 1,
+          'text-background-padding': '2px',
+          'text-border-radius': '3px',
+          'text-valign': 'top',
+          'text-halign': 'center',
+          'text-margin-y': -4,
+          'z-index': 10,
+        },
+      },
+      // Hover state
+      {
+        selector: 'edge:hover',
+        style: { opacity: 1, width: 2.5, 'transition-duration': '0.1s' },
+      },
+    ],
+    layout: {
+      name: 'fcose',
+      quality: 'proof',
+      idealEdgeLength: node => node.data('kind') === 'uses_enum' ? 70 : 200,
+      nodeRepulsion: 6000,
+      gravity: 1.2,
+      numIter: 2000,
+      tile: true,
+      randomize: false,
+      animate: true,
+      animationDuration: 500,
+      animationEasing: 'ease-out',
+      fit: true,
+      padding: 60,
+    },
+    minZoom: 0.1, maxZoom: 3, wheelSensitivity: 0.35,
+  });
+
+  // ─── Create HTML card overlays ───
+  cy.on('ready layoutstop', () => {
+    createCards();
+    updateCards();
+    updateStats();
+  });
+  cy.on('pan zoom resize', updateCards);
+  cy.on('viewport', updateCards);
+
+  // ─── Hover interactions ───
+  let hoveredNodeId = null;
+
+  cy.on('mouseover', 'node[kind = "table"]', evt => highlightNeighborhood(evt.target.id()));
+  cy.on('mouseout', 'node[kind = "table"]', () => clearHighlight());
+
+  // Click to open detail panel
+  cy.on('tap', 'node[kind = "table"]', evt => openDetail(evt.target.id()));
+
+  // Click on background to close detail
+  cy.on('tap', evt => { if (evt.target === cy) closeDetail(); });
+
+  // ─── Edge tooltip ───
+  const tooltip = document.getElementById('tooltip');
+  cy.on('mouseover', 'edge[kind = "references"]', evt => {
+    const edge = evt.target;
+    const src = nodeMap[edge.data('source')]?.label || edge.data('source');
+    const tgt = nodeMap[edge.data('target')]?.label || edge.data('target');
+    const cols = edge.data('localCols');
+    tooltip.innerHTML =
+      '<strong style="color:#e6edf3">' + esc(src) + '</strong>' +
+      '<span style="color:#484f58"> &#8594; </span>' +
+      '<strong style="color:#e6edf3">' + esc(tgt) + '</strong>' +
+      (cols ? '<br><span style="color:#8b949e">on ' + esc(cols) + '</span>' : '');
+    tooltip.className = 'visible';
+    moveTooltip(evt);
+  });
+  cy.on('mousemove', 'edge[kind = "references"]', moveTooltip);
+  cy.on('mouseout', 'edge', () => { tooltip.className = ''; });
+
+  function moveTooltip(evt) {
+    const rect = cy.container().getBoundingClientRect();
+    tooltip.style.left = (evt.renderedPosition?.x || evt.clientX - rect.left + 12) + 'px';
+    tooltip.style.top = (evt.renderedPosition?.y || evt.clientY - rect.top - 8) + 'px';
+  }
+}
+
+// ─── HTML-escape ───
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ─── Card management ───
+function createCards() {
+  const container = document.getElementById('overlays');
+  container.innerHTML = '';
+
+  cy.nodes('[kind = "table"]').forEach(node => {
+    const card = document.createElement('div');
+    card.className = 'table-card';
+    card.id = 'card-' + node.id();
+
+    const data = node.data();
+
+    let html = '<div class="table-header"><div class="icon" style="background:#58a6ff">&#9673;</div>' + esc(data.label) + '</div><div class="table-body">';
+
+    (data.cols || []).forEach(col => {
+      const isPK = col.isPK;
+      const isFK = (data.fks || []).some(fk => fk.localCols.includes(col.label));
+      const badgeClass = isPK && isFK ? 'pkfk' : isPK ? 'pk' : isFK ? 'fk' : '';
+      const badgeText = isPK && isFK ? '\u2680' : isPK ? '\uD83D\uDD11' : isFK ? '\uD83D\uDD17' : '';
+      const nullableDot = col.nullable ? '<span class="nullable-dot"></span>' : '';
+      html += '<div class="col-row">' +
+        '<div class="badge ' + badgeClass + '">' + badgeText + '</div>' +
+        '<span class="col-name">' + esc(col.label) + '</span>' +
+        '<span class="col-type">' + esc(col.type) + (col.length ? '(' + col.length + ')' : '') + '</span>' +
+        nullableDot +
+        '</div>';
+    });
+
+    html += '</div>';
+    card.innerHTML = html;
+
+    card.addEventListener('mouseenter', () => highlightNeighborhood(node.id()));
+    card.addEventListener('mouseleave', clearHighlight);
+    card.addEventListener('click', () => openDetail(node.id()));
+
+    container.appendChild(card);
+    nodeCards.set(node.id(), card);
+  });
+}
+
+function updateCards() {
+  const zoom = cy.zoom();
+  const pan = cy.pan();
+  nodeCards.forEach((card, nodeId) => {
+    const node = cy.getElementById(nodeId);
+    if (!node || !node.visible()) { card.style.display = 'none'; return; }
+    card.style.display = '';
+    const pos = node.position();
+    const x = pos.x * zoom + pan.x;
+    const y = pos.y * zoom + pan.y;
+    card.style.left = x + 'px';
+    card.style.top = y + 'px';
+    card.style.transform = 'translate(-50%,-50%) scale(' + Math.min(1, Math.max(0.6, zoom / 1.3)) + ')';
+    card.style.opacity = Math.min(1, zoom / 0.35);
+  });
+}
+
+// ─── Neighborhood highlighting ───
+function highlightNeighborhood(nodeId) {
+  const node = cy.getElementById(nodeId);
+  if (!node || !node.isNode()) return;
+
+  const connected = new Set();
+  connected.add(nodeId);
+
+  node.connectedEdges().forEach(edge => {
+    connected.add(edge.source().id());
+    connected.add(edge.target().id());
+  });
+
+  cy.nodes('[kind = "table"]').forEach(n => {
+    const card = nodeCards.get(n.id());
+    if (!card) return;
+    if (connected.has(n.id())) {
+      card.classList.remove('dim');
+      card.classList.add('highlight');
+    } else {
+      card.classList.add('dim');
+      card.classList.remove('highlight');
+    }
+  });
+
+  cy.edges().forEach(e => {
+    if (connected.has(e.source().id()) && connected.has(e.target().id())) {
+      e.style({ opacity: 1, 'z-index': 10 });
+    } else {
+      e.style({ opacity: 0.12, 'z-index': 0 });
+    }
+  });
+}
+
+function clearHighlight() {
+  nodeCards.forEach(card => card.classList.remove('dim', 'highlight'));
+  cy.edges().forEach(e => e.style({ opacity: null, 'z-index': null }));
+}
+
+// ─── Detail panel ───
+function openDetail(nodeId) {
+  const node = cy.getElementById(nodeId);
+  if (!node) return;
+  const data = node.data();
+  const content = document.getElementById('detail-content');
+
+  const cols = data.cols || [];
+  const fks = data.fks || [];
+  const refs = data.referencedBy || [];
+  const isEnum = data.kind === 'enum';
+
+  let html = '';
+
+  if (data.kind === 'table') {
+    html += '<h2>' + esc(data.label) + '</h2>' +
+      '<div class="node-path">' + esc(nodeId) + '</div>';
+
+    // Columns section
+    html += '<div class="section"><h3>Columns (' + cols.length + ')</h3>';
+    cols.forEach(col => {
+      const isPK = col.isPK;
+      const isFK = fks.some(fk => fk.localCols.includes(col.label));
+      const badge = isPK && isFK ? '\uD83D\uDD11\uD83D\uDD17' : isPK ? '\uD83D\uDD11' : isFK ? '\uD83D\uDD17' : '';
+      html += '<div class="col-row">' +
+        (badge ? '<span style="margin-right:4px;font-size:12px">' + badge + '</span>' : '') +
+        '<span class="col-name">' + esc(col.label) + '</span>' +
+        '<span class="col-type">' + esc(col.type) + (col.length ? '(' + col.length + ')' : '') +
+        (col.nullable ? ' NULL' : ' NOT NULL') +
+        (col.default !== null && col.default !== undefined ? ' DEFAULT ' + esc(String(col.default)) : '') +
+        '</span></div>';
+    });
+    html += '</div>';
+
+    // FK section
+    if (fks.length > 0) {
+      html += '<div class="section"><h3>Foreign Keys (' + fks.length + ')</h3>';
+      const nmap = {};
+      graphData.node_list.forEach(n => { nmap[n.id] = n; });
+      fks.forEach(fk => {
+        const targetName = nmap[fk.to] ? nmap[fk.to].label : fk.to;
+        const cardLabel = fk.cardinality === 'one_to_one' ? '1—1' : fk.cardinality === 'many_to_many' ? '*—*' : '1—*';
+        html += '<div class="fk-block">' +
+          '<span class="src">(' + fk.localCols.join(', ') + ')</span>' +
+          '<span class="arrow">&#8594;</span>' +
+          '<span class="tgt">' + esc(targetName) + '</span>' +
+          '<span class="meta">(' + fk.foreignCols.join(', ') + ')</span>' +
+          '<span class="card">' + cardLabel + '</span></div>';
+      });
+      html += '</div>';
+    }
+
+    // Referenced by section
+    if (refs.length > 0) {
+      html += '<div class="section"><h3>Referenced By (' + refs.length + ')</h3>';
+      const nmap = {};
+      graphData.node_list.forEach(n => { nmap[n.id] = n; });
+      refs.forEach(ref => {
+        const srcName = nmap[ref.from] ? nmap[ref.from].label : ref.from;
+        html += '<div class="fk-block" style="background:rgba(63,185,80,0.06);border-color:rgba(63,185,80,0.1)">' +
+          '<span class="tgt">' + esc(srcName) + '</span>' +
+          '<span class="arrow">&#8594;</span>' +
+          '<span class="src">(' + ref.localCols.join(', ') + ')</span></div>';
+      });
+      html += '</div>';
+    }
+  } else if (isEnum) {
+    html += '<h2>' + esc(data.label) + '</h2>' +
+      '<div class="node-path">' + esc(nodeId) + '</div>' +
+      '<div class="section"><h3>Values (' + (data.values || []).length + ')</h3>';
+    (data.values || []).forEach(v => {
+      html += '<div class="col-row"><span class="col-name">' + esc(v) + '</span></div>';
+    });
+    html += '</div>';
+  }
+
+  content.innerHTML = html;
+  document.getElementById('detail').classList.add('open');
+}
+
+function closeDetail() {
+  document.getElementById('detail').classList.remove('open');
+}
+
+// ─── Stats ───
+function updateStats() {
+  const stats = document.getElementById('stats');
+  const nodes = graphData.node_list || [];
+  const edges = graphData.edges || [];
+  const tables = nodes.filter(n => n.kind === 'table');
+  const enums = nodes.filter(n => n.kind === 'enum');
+  const refs = edges.filter(e => e.kind === 'references');
+
+  stats.innerHTML =
+    '<span>Tables <strong>' + tables.length + '</strong></span>' +
+    '<span>FKs <strong>' + refs.length + '</strong></span>' +
+    '<span>Enums <strong>' + enums.length + '</strong></span>' +
+    '<span>Columns <strong>' + nodes.filter(n => n.kind === 'column').length + '</strong></span>';
+}
+
+// ─── Controls ───
+function fitGraph() {
+  if (cy) { cy.fit(undefined, 60); updateCards(); }
+}
+
+function resetLayout() {
+  if (!cy) return;
+  nodeCards.forEach(card => card.remove());
+  nodeCards.clear();
+  cy.layout({
+    name: 'fcose', quality: 'proof',
+    idealEdgeLength: node => node.data('kind') === 'uses_enum' ? 70 : 200,
+    nodeRepulsion: 6000, gravity: 1.2, numIter: 2000, tile: true,
+    animate: true, animationDuration: 500, animationEasing: 'ease-out',
+    fit: true, padding: 60,
+  }).run();
+  cy.once('layoutstop', () => { createCards(); updateCards(); });
+}
+
+// Handle resize
+window.addEventListener('resize', () => { if (cy) setTimeout(updateCards, 100); });
+</script>
+</body>
+</html>

@@ -56,11 +56,13 @@ func TestNormalizeType_KnownTypes(t *testing.T) {
 		{"bytea", TypeBytea},
 
 		// Text aliases (common in pg)
-		{"inet", TypeText},
 		{"cidr", TypeText},
-		{"macaddr", TypeText},
 		{"citext", TypeText},
 		{"name", TypeText},
+
+		// Network types
+		{"inet", TypeInet},
+		{"macaddr", TypeMacAddr},
 
 		// Unknown types (not in the type map → TypeUnknown)
 		{"mood", TypeUnknown},

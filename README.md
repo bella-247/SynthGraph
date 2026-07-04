@@ -76,25 +76,30 @@ Understand your schema's dependency graph before generating anything.
 ### Installation
 
 ```bash
-# Download binary (Linux / macOS / Windows)
-curl -sSL https://github.com/your-org/synthgraph/releases/latest/download/install.sh | sh
+# Build from source (requires Go 1.21+, GCC for CGO)
+CGO_ENABLED=1 go build -o synthgraph ./cmd/synthgraph/
 
-# Or build from source (requires Go 1.21+ and libpq development headers)
-# macOS: brew install libpq
-# Ubuntu/Debian: sudo apt-get install libpq-dev
-# Then: go install github.com/your-org/synthgraph/cmd/synthgraph@latest
+# Or run directly
+CGO_ENABLED=1 go run ./cmd/synthgraph/ generate --input schema.sql --rows 100
 ```
 
 ### Generate a seed file
 
 ```bash
-synthgraph generate --schema schema.sql --rows 100 --output seed.sql
+synthgraph generate --input schema.sql --rows 100 --output seed.sql
 ```
 
 ### Inspect your schema graph
 
 ```bash
-synthgraph inspect schema.sql
+synthgraph inspect --input schema.sql --graph --semantic
+```
+
+### Visualize (development UI)
+
+```bash
+CGO_ENABLED=1 go run ./cmd/serveviz/ --schema schema.sql
+# Open http://localhost:8080
 ```
 
 ```
@@ -222,24 +227,27 @@ Every FK value exists. Every email is unique. The file runs clean.
 ### `generate`
 
 ```
-synthgraph generate --schema <path> [flags]
+synthgraph generate --input <path> [flags]
 
 Flags:
-  --schema    Path to SQL schema file (required)
-  --rows      Rows per table (default: 100)
-  --output    Output file path (default: stdout)
-  --format    Output format: sql, csv (default: sql)
-  --seed      RNG seed for determinism (default: 42)
-  --tables    Comma-separated list of tables to include
+  --input, -i       Path to SQL schema file (required)
+  --output, -o      Output file path (default: stdout)
+  --format, -f      Output format: sql, csv (default: sql)
+  --rows, -r        Rows per table (default: 10)
+  --seed, -s        RNG seed for determinism (default: 42)
+  --schema-name     Schema name for SQL output (optional)
 ```
 
 ### `inspect`
 
 ```
-synthgraph inspect <schema-path>
+synthgraph inspect --input <path> [flags]
 
-Prints graph analysis: table count, relationship count, cycles, generation order.
-No data is generated.
+Flags:
+  --input, -i   Path to SQL schema file (required)
+  --graph        Show graph structure summary
+  --semantic     Show semantic inference summary
+  -v             Verbose output (--graph + --semantic)
 ```
 
 ### `version`
@@ -248,35 +256,68 @@ No data is generated.
 synthgraph version
 ```
 
+### `serveviz` (development tool)
+
+```
+go run ./cmd/serveviz/ --schema <path> [--port 8080]
+
+Starts an HTTP server with an interactive Cytoscape.js graph visualizer.
+Open http://localhost:8080 in your browser.
+```
+
 ---
 
 ## Architecture
 
-SynthGraph is a strict linear pipeline. No stage communicates with a non-adjacent stage.
+SynthGraph is a strict linear pipeline. Every stage consumes one typed artifact and produces another.
 
 ```
-Schema File
+SQL File
     │
     ▼
-Parser          → Internal Schema Model
+  Parser
     │
     ▼
-Graph Builder   → Directed Schema Graph
+  AST
     │
     ▼
-Planner         → Generation Plan (with cycle resolution)
+  Translator (extract → normalize → link → validate → build)
     │
     ▼
-Generator       → Raw Dataset
+  schema.Model     ◄── parser-agnostic canonical IR
     │
     ▼
-Validator       → Verified Dataset (or hard failure)
+  Graph Builder
     │
     ▼
-Exporter        → SQL / CSV output
+  SchemaGraph
+    │
+    ▼
+  Planner (topological sort + cycle detection)
+    │
+    ▼
+  GenerationPlan
+    │
+    ▼
+  Generator (per-table seeded RNG)
+    │
+    ▼
+  Dataset
+    │
+    ▼
+  Post-generation Validator
+    │
+    ▼
+  ValidatedDataset
+    │
+    ▼
+  Exporter
+    │
+    ▼
+  SQL INSERT / CSV
 ```
 
-Every parser produces the same Internal Schema Model. The rest of the pipeline never knows what format the schema came from.
+Every parser produces the same `schema.Model`. The graph engine, planner, generator, validator, and exporter never know what format the schema came from.
 
 Full architecture documentation: [docs/architecture.md](docs/architecture.md)
 
@@ -305,6 +346,20 @@ Full architecture documentation: [docs/architecture.md](docs/architecture.md)
 - Direct database insertion
 
 Full roadmap: [ROADMAP.md](ROADMAP.md)
+
+---
+
+## Development
+
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the complete development guide covering:
+
+- **Prerequisites** — Go, GCC, MinGW-w64 setup
+- **Building** — with and without CGO
+- **Testing** — all tests, specific packages, specific tests
+- **Running the CLI** — every flag for `generate`, `inspect`, `version`
+- **Schema Visualizer** — running and using the Cytoscape.js UI
+- **Extending** — adding parser dialects, inference rules, type generators
+- **Debugging** — tips and common issues
 
 ---
 

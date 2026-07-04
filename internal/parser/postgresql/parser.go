@@ -16,7 +16,7 @@ import (
 //	With CGO: uses pg_query_go to parse.
 //	Without CGO: returns an error — install CGO + gcc.
 //
-// Phase 2 — Translate our AST into schema.Schema.
+// Phase 2 — Translate our AST into schema.Model.
 //
 //	Pure Go, always works.
 type PostgreSQLParser struct{}
@@ -36,8 +36,8 @@ func (p *PostgreSQLParser) SupportedExtensions() []string {
 	return []string{".sql"}
 }
 
-// Parse reads PostgreSQL DDL and returns the canonical schema.Schema.
-func (p *PostgreSQLParser) Parse(source []byte) (*schema.Schema, error) {
+// Parse reads PostgreSQL DDL and returns the canonical schema.Model.
+func (p *PostgreSQLParser) Parse(source []byte) (*schema.Model, error) {
 	text := string(source)
 
 	// Phase 1: parse SQL into our intermediate AST
@@ -91,9 +91,9 @@ func preprocessSQL(text string) []string {
 		if idx := strings.Index(trimmed, "/*"); idx >= 0 {
 			endIdx := strings.Index(trimmed[idx+2:], "*/")
 			if endIdx >= 0 {
-				prefix := strings.TrimRight(trimmed[:idx], " 	")
-					suffix := strings.TrimSpace(trimmed[idx+2+endIdx+2:])
-					trimmed = strings.TrimSpace(prefix + suffix)
+				prefix := strings.TrimRight(trimmed[:idx], " \t")
+				suffix := strings.TrimSpace(trimmed[idx+2+endIdx+2:])
+				trimmed = strings.TrimSpace(prefix + suffix)
 			} else {
 				trimmed = strings.TrimSpace(trimmed[:idx])
 				inBlockComment = true

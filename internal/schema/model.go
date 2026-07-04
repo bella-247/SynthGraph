@@ -7,11 +7,12 @@
 // Think of it as SynthGraph's Intermediate Representation (IR).
 package schema
 
-// Schema is the unified internal representation of any supported schema format.
+// Model is the unified internal representation of any supported schema format.
 // All parsers must produce this structure. All downstream stages consume it.
-type Schema struct {
-	Tables []Table    `json:"tables"`
-	Enums  []EnumType `json:"enums,omitempty"`
+type Model struct {
+	Tables   []*Table          `json:"tables"`
+	TableMap map[string]*Table `json:"-"` // O(1) lookup by table name, built during construction
+	Enums    []EnumType        `json:"enums,omitempty"`
 }
 
 // EnumType represents a named enum type.
@@ -22,27 +23,47 @@ type EnumType struct {
 
 // Table represents a single database table with its columns and constraints.
 type Table struct {
-	Name        string        `json:"name"`
-	Columns     []Column      `json:"columns"`
-	PrimaryKey  []string      `json:"primary_key,omitempty"`
-	ForeignKeys []ForeignKey  `json:"foreign_keys,omitempty"`
-	Unique      [][]string    `json:"unique,omitempty"`
+	Name        string            `json:"name"`
+	Columns     []Column          `json:"columns"`
+	PrimaryKey  []string          `json:"primary_key,omitempty"`
+	ForeignKeys []ForeignKey      `json:"foreign_keys,omitempty"`
+	Unique      [][]string        `json:"unique,omitempty"`
+	Checks      []CheckConstraint `json:"checks,omitempty"`
 }
 
 // Column represents a single column in a table.
 type Column struct {
 	Name         string  `json:"name"`
 	Type         string  `json:"type"`
+	Length       int     `json:"length,omitempty"`    // for VARCHAR(n), DECIMAL(p,s)
+	Precision    int     `json:"precision,omitempty"` // for DECIMAL(p,s)
 	Nullable     bool    `json:"nullable"`
 	Default      *string `json:"default,omitempty"`
 	IsPrimaryKey bool    `json:"is_primary_key"`
 }
+
+// CheckConstraint represents a single CHECK constraint on a table.
+type CheckConstraint struct {
+	Name       string `json:"name,omitempty"`
+	Expression string `json:"expression"` // the raw check expression text
+}
+
+// FKAction represents a foreign key action (ON DELETE / ON UPDATE).
+type FKAction string
+
+const (
+	FKNoAction   FKAction = "NO ACTION"
+	FKCascade    FKAction = "CASCADE"
+	FKRestrict   FKAction = "RESTRICT"
+	FKSetNull    FKAction = "SET NULL"
+	FKSetDefault FKAction = "SET DEFAULT"
+)
 
 // ForeignKey represents a foreign key constraint.
 type ForeignKey struct {
 	Columns    []string `json:"columns"`
 	RefTable   string   `json:"ref_table"`
 	RefColumns []string `json:"ref_columns"`
-	OnDelete   string   `json:"on_delete,omitempty"`
-	OnUpdate   string   `json:"on_update,omitempty"`
+	OnDelete   FKAction `json:"on_delete,omitempty"`
+	OnUpdate   FKAction `json:"on_update,omitempty"`
 }

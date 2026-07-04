@@ -2,7 +2,7 @@
 // for PostgreSQL DDL statements.
 //
 // This package has zero external dependencies. The translator operates on these
-// types and produces a *schema.Schema. The adapter (adapter.go) converts from
+// types and produces a *schema.Model. The adapter (adapter.go) converts from
 // pg_query_go's protobuf AST to these types, isolating the CGO dependency.
 package postgresql
 
@@ -26,6 +26,27 @@ type CreateTableStmt struct {
 	TableConstraints []TableConstraint
 }
 
+// InlineFKRef represents a column-level REFERENCES constraint.
+// It is equivalent to a table-level FOREIGN KEY constraint and must
+// produce the same schema.ForeignKey during translation.
+type InlineFKRef struct {
+	RefTable   string
+	RefColumns []string
+	OnDelete   FKAction
+	OnUpdate   FKAction
+}
+
+// FKAction represents a foreign key action (ON DELETE / ON UPDATE).
+type FKAction string
+
+const (
+	FKNoAction   FKAction = "NO ACTION"
+	FKCascade    FKAction = "CASCADE"
+	FKRestrict   FKAction = "RESTRICT"
+	FKSetNull    FKAction = "SET NULL"
+	FKSetDefault FKAction = "SET DEFAULT"
+)
+
 // ColumnDef represents a single column definition inside CREATE TABLE.
 type ColumnDef struct {
 	Name         string
@@ -34,6 +55,7 @@ type ColumnDef struct {
 	Default      string // raw default expression, empty if none
 	IsPrimaryKey bool   // inline PRIMARY KEY (column-level)
 	IsUnique     bool   // inline UNIQUE (column-level)
+	References   *InlineFKRef // inline REFERENCES (column-level FK), nil if none
 	Comment      string
 }
 
@@ -44,7 +66,6 @@ type ColumnType struct {
 	Precision int    // for decimal(p,s)
 	IsSerial  bool   // SERIAL / BIGSERIAL
 	IsArray   bool   // type[]
-	EnumName  string // for enum types, the name of the enum
 }
 
 // TableConstraint represents a table-level constraint (PK, FK, UNIQUE, CHECK).
@@ -54,8 +75,9 @@ type TableConstraint struct {
 	Columns    []string // columns involved
 	RefTable   string   // FK only
 	RefColumns []string // FK only
-	OnDelete   string   // FK only
-	OnUpdate   string   // FK only
+	OnDelete   FKAction // FK only
+	OnUpdate   FKAction // FK only
+	CheckExpr  string   // CHECK only: the raw expression text
 }
 
 // ConstraintType enumerates table-level constraint types.
