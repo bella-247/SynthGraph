@@ -1,6 +1,10 @@
 package semantic
 
-import "synthgraph/internal/graph"
+import (
+	"strings"
+
+	"synthgraph/internal/graph"
+)
 
 // InferenceContext carries the source graph and precomputed indexes that rules
 // use to avoid repeated O(N) edge scans. It is built once per SemanticGraph
@@ -40,6 +44,11 @@ type InferenceContext struct {
 	// SelfRefCount maps table node ID to the number of self-referencing foreign
 	// keys on that table. Used by HierarchyRule.
 	SelfRefCount map[string]int
+
+	// ColumnNullableIndex maps table node ID to a set of column names that are
+	// nullable. Precomputed from EdgeKindContains edges so rules and relationship
+	// inference never need to scan the full edge list.
+	ColumnNullableIndex map[string]map[string]bool
 }
 
 // newInferenceContext builds all precomputed indexes from the source graph
@@ -62,6 +71,7 @@ func newInferenceContext(sourceGraph *graph.Graph) *InferenceContext {
 		AuditPattern:            make(map[string]AuditPattern),
 		ForeignKeyColumnIndex:   make(map[string]map[string]bool),
 		SelfRefCount:            make(map[string]int),
+		ColumnNullableIndex:     make(map[string]map[string]bool),
 	}
 
 	// Single pass over all edges to populate every index.
@@ -94,6 +104,7 @@ func newInferenceContext(sourceGraph *graph.Graph) *InferenceContext {
 			context.ColumnCount[edge.From]++
 			populateTemporalPattern(context, edge, sourceGraph)
 			populateAuditPattern(context, edge, sourceGraph)
+			populateColumnNullableIndex(context, edge, sourceGraph)
 		}
 	}
 
@@ -124,7 +135,7 @@ func populateTemporalPattern(context *InferenceContext, edge *graph.Edge, source
 		return
 	}
 	pattern := context.TemporalPattern[edge.From]
-	switch toLower(columnNode.Label) {
+	switch strings.ToLower(columnNode.Label) {
 	case "created_at":
 		pattern.HasCreatedAt = true
 	case "updated_at":
@@ -143,7 +154,7 @@ func populateAuditPattern(context *InferenceContext, edge *graph.Edge, sourceGra
 		return
 	}
 	pattern := context.AuditPattern[edge.From]
-	switch toLower(columnNode.Label) {
+	switch strings.ToLower(columnNode.Label) {
 	case "created_by":
 		pattern.HasCreatedBy = true
 	case "updated_by":
@@ -154,18 +165,23 @@ func populateAuditPattern(context *InferenceContext, edge *graph.Edge, sourceGra
 	context.AuditPattern[edge.From] = pattern
 }
 
-// toLower returns a lowercased copy of the given string.
-// Defined as a small helper to avoid importing strings in this file.
-func toLower(value string) string {
-	runes := make([]rune, len(value))
-	for index, r := range value {
-		if r >= 'A' && r <= 'Z' {
-			runes[index] = r + 32
-		} else {
-			runes[index] = r
-		}
+// populateColumnNullableIndex records whether a column is nullable in the
+// context's precomputed index, keyed by table node ID.
+func populateColumnNullableIndex(context *InferenceContext, edge *graph.Edge, sourceGraph *graph.Graph) {
+	columnNode, exists := sourceGraph.Nodes[edge.To]
+	if !exists {
+		return
 	}
-	return string(runes)
+	columnData, hasData := columnNode.Data.(graph.ColumnData)
+	if !hasData {
+		return
+	}
+	index := context.ColumnNullableIndex[edge.From]
+	if index == nil {
+		index = make(map[string]bool)
+		context.ColumnNullableIndex[edge.From] = index
+	}
+	index[columnNode.Label] = columnData.Nullable
 }
 
 // Rule is the single interface that every inference rule must implement.
