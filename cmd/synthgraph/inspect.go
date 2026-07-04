@@ -8,8 +8,6 @@ import (
 	"strings"
 
 	"synthgraph/internal/graph"
-	"synthgraph/internal/parser"
-	"synthgraph/internal/parser/postgresql"
 	"synthgraph/internal/schema"
 	"synthgraph/internal/semantic"
 )
@@ -36,56 +34,37 @@ func runInspect(args []string) {
 		os.Exit(1)
 	}
 
-	sqlBytes, err := os.ReadFile(config.input)
+	model, err := parseSQLFile(config.input)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: reading input file: %v\n", err)
-		os.Exit(1)
-	}
-
-	registry := parser.NewRegistry()
-	registry.Register(postgresql.New())
-	var model *schema.Model
-	for _, name := range registry.Names() {
-		p, parseErr := registry.Get(name)
-		if parseErr != nil {
-			continue
-		}
-		parsed, parseErr := p.Parse(sqlBytes)
-		if parseErr == nil {
-			model = parsed
-			break
-		}
-	}
-	if model == nil {
-		fmt.Fprintf(os.Stderr, "error: no parser could process the input (supported: %s)\n",
-			strings.Join(registry.Names(), ", "))
+		fmt.Fprintf(os.Stderr, "error: parsing schema: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Always print schema overview.
 	printSchemaOverview(model)
 
-	if config.graph || config.verbose {
-		g, err := graph.Build(model)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: building graph: %v\n", err)
-			os.Exit(1)
-		}
-		printGraphSummary(g)
-	}
+	showGraph := config.graph || config.verbose
+	showSemantic := config.semantic || config.verbose
 
-	if config.semantic || config.verbose {
-		g, err := graph.Build(model)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: building graph: %v\n", err)
+	if showGraph || showSemantic {
+		g, graphError := graph.Build(model)
+		if graphError != nil {
+			fmt.Fprintf(os.Stderr, "error: building graph: %v\n", graphError)
 			os.Exit(1)
 		}
-		sg, err := semantic.Build(g)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: building semantic graph: %v\n", err)
-			os.Exit(1)
+
+		if showGraph {
+			printGraphSummary(g)
 		}
-		printSemanticSummary(sg)
+
+		if showSemantic {
+			sg, semanticError := semantic.Build(g)
+			if semanticError != nil {
+				fmt.Fprintf(os.Stderr, "error: building semantic graph: %v\n", semanticError)
+				os.Exit(1)
+			}
+			printSemanticSummary(sg)
+		}
 	}
 }
 
