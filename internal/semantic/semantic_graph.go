@@ -5,7 +5,7 @@ import "synthgraph/internal/graph"
 // SemanticGraph is the output of the Semantic Layer.
 //
 // It wraps the original graph.Graph and enriches every node with inferred
-// meaning. The original graph is always preserved unchanged via SourceGraph —
+// meaning. The original graph is always preserved unchanged via Source —
 // any downstream system that needs raw structural data can always access it.
 //
 // # Determinism
@@ -27,10 +27,10 @@ type SemanticGraph struct {
 	// relationships; structural edges (contains, uses_enum) are not included.
 	Relationships []*SemanticRelationship
 
-	// SourceGraph is the original graph.Graph this semantic graph was built from.
+	// Source is the original graph.Graph this semantic graph was built from.
 	// It is preserved without modification. Downstream AI and analysis layers
 	// can traverse the source graph for any information not surfaced here.
-	SourceGraph *graph.Graph
+	Source *graph.Graph
 }
 
 // SemanticNode wraps a graph.Node with inferred semantic properties.
@@ -104,6 +104,6 @@ func newSemanticGraph(sourceGraph *graph.Graph) *SemanticGraph {
 		Nodes:         make(map[string]*SemanticNode, len(sourceGraph.Nodes)),
 		NodeList:      make([]*SemanticNode, 0, len(sourceGraph.NodeList)),
 		Relationships: make([]*SemanticRelationship, 0),
-		SourceGraph:   sourceGraph,
+		Source:   sourceGraph,
 	}
 }
