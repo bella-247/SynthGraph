@@ -490,25 +490,31 @@ func allColumnsNullable(schemaGraph *graph.Graph, edge *graph.Edge) bool {
 	return true
 }
 
-// orderCycleMembers produces a valid generation order for a cycle,
-// placing the breakpoint parent before the breakpoint child and
-// ordering remaining members deterministically.
+// orderCycleMembers produces a valid generation order for a cycle.
+//
+// The breakpoint child (breakpointFrom) is placed FIRST so that its PK values
+// are available when other cycle members reference it via non-deferred FK
+// columns. The breakpoint parent (breakpointTo) is placed LAST so that its
+// own FK references to other cycle members can be satisfied.
 func orderCycleMembers(component []string, breakpointFrom, breakpointTo string) []string {
 	ordered := make([]string, 0, len(component))
 	seen := make(map[string]bool, len(component))
 
-	ordered = append(ordered, breakpointTo)
-	seen[breakpointTo] = true
+	// Breakpoint child first — its PKs must be available for other cycle members.
+	ordered = append(ordered, breakpointFrom)
+	seen[breakpointFrom] = true
 
+	// Other cycle members.
 	for _, id := range component {
-		if !seen[id] && id != breakpointFrom {
+		if !seen[id] && id != breakpointTo {
 			ordered = append(ordered, id)
 			seen[id] = true
 		}
 	}
 
-	if !seen[breakpointFrom] {
-		ordered = append(ordered, breakpointFrom)
+	// Breakpoint parent last — it references other cycle members via FKs.
+	if !seen[breakpointTo] {
+		ordered = append(ordered, breakpointTo)
 	}
 
 	return ordered
@@ -582,9 +588,9 @@ func processBlockedTables(schemaGraph *graph.Graph, schemaModel *schema.Model, b
 	}
 	if len(remaining) > 0 {
 		return nil, &PlanError{
-			Message: fmt.Sprintf("cannot resolve %d table(s) after processing all cycles — they depend on unresolvable cycles", len(remaining)),
+			Message:    fmt.Sprintf("cannot resolve %d table(s) after processing all cycles — they depend on unresolvable cycles", len(remaining)),
 			CycleTables: remaining,
-			Hint: "review the table dependencies; a larger cycle may involve these tables indirectly",
+			Hint:       "review the table dependencies; a larger cycle may involve these tables indirectly",
 		}
 	}
 
