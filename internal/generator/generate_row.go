@@ -3,6 +3,7 @@ package generator
 import (
 	"fmt"
 
+	"synthgraph/internal/graph"
 	"synthgraph/internal/planner"
 )
 
@@ -17,7 +18,7 @@ func generateTable(
 	tableName := tablePlan.TableName
 	table := tablePlan.Table
 	rowCount := tablePlan.RowCount
-	deferredCols := makeStringSet(tablePlan.DeferredCols)
+	deferredCols := graph.StringSet(tablePlan.DeferredCols)
 
 	rng := newTableRNG(ctx.GlobalSeed, tableName)
 

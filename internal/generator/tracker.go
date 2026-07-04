@@ -57,12 +57,3 @@ func isPrimaryKeyColumn(columnName string, pk []string) bool {
 	}
 	return false
 }
-
-// makeStringSet converts a string slice to a set.
-func makeStringSet(values []string) map[string]bool {
-	s := make(map[string]bool, len(values))
-	for _, v := range values {
-		s[v] = true
-	}
-	return s
-}

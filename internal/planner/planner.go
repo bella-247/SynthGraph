@@ -212,15 +212,6 @@ func makeTablePlan(nodeID string, tableNodes map[string]*graph.Node, schemaModel
 
 // ── Utility ───────────────────────────────────────────────────────────────
 
-// makeStringSet converts a string slice to a set map.
-func makeStringSet(values []string) map[string]bool {
-	s := make(map[string]bool, len(values))
-	for _, v := range values {
-		s[v] = true
-	}
-	return s
-}
-
 // dedupeStrings removes duplicate strings, returning a sorted result.
 func dedupeStrings(values []string) []string {
 	seen := make(map[string]bool, len(values))
