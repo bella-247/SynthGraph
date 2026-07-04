@@ -14,14 +14,6 @@ func newUniqueTracker(table *schema.Table) *uniqueTracker {
 		seen:       make(map[string]map[any]bool),
 	}
 
-	for _, col := range table.Columns {
-		if col.Name == "" {
-			continue
-		}
-		if isPrimaryKeyColumn(col.Name, table.PrimaryKey) {
-			tracker.uniqueCols[col.Name] = true
-		}
-	}
 	for _, uniqueConstraint := range table.Unique {
 		for _, col := range uniqueConstraint {
 			tracker.uniqueCols[col] = true
@@ -47,15 +39,6 @@ func (tracker *uniqueTracker) record(column string, value any) {
 		tracker.seen[column] = make(map[any]bool)
 	}
 	tracker.seen[column][value] = true
-}
-
-func isPrimaryKeyColumn(columnName string, pk []string) bool {
-	for _, pkCol := range pk {
-		if pkCol == columnName {
-			return true
-		}
-	}
-	return false
 }
 
 // makeStringSet converts a string slice to a set.

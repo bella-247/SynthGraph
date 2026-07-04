@@ -21,8 +21,8 @@ func TestUniqueTracker(t *testing.T) {
 
 	tracker := newUniqueTracker(table)
 
-	if !tracker.isUniqueColumn("id") {
-		t.Error("id should be unique (PK)")
+	if tracker.isUniqueColumn("id") {
+		t.Error("PK columns do not need uniqueness tracking (RNG guaranteed)")
 	}
 	if !tracker.isUniqueColumn("email") {
 		t.Error("email should be unique (UNIQUE constraint)")
@@ -32,11 +32,7 @@ func TestUniqueTracker(t *testing.T) {
 	}
 
 	if tracker.checkSeen("id", 1) {
-		t.Error("should not be seen yet")
-	}
-	tracker.record("id", 1)
-	if !tracker.checkSeen("id", 1) {
-		t.Error("should be seen after recording")
+		t.Error("id should not be tracked")
 	}
 }
 
