@@ -124,23 +124,13 @@ func populateTemporalPattern(context *InferenceContext, edge *graph.Edge, source
 		return
 	}
 	pattern := context.TemporalPattern[edge.From]
-	switch columnNode.Label {
-	case "created_at", "CREATED_AT":
+	switch toLower(columnNode.Label) {
+	case "created_at":
 		pattern.HasCreatedAt = true
-	case "updated_at", "UPDATED_AT":
+	case "updated_at":
 		pattern.HasUpdatedAt = true
-	case "deleted_at", "DELETED_AT":
+	case "deleted_at":
 		pattern.HasDeletedAt = true
-	default:
-		// Also check case-insensitive variants beyond the exact matches above.
-		lower := toLower(columnNode.Label)
-		if lower == "created_at" {
-			pattern.HasCreatedAt = true
-		} else if lower == "updated_at" {
-			pattern.HasUpdatedAt = true
-		} else if lower == "deleted_at" {
-			pattern.HasDeletedAt = true
-		}
 	}
 	context.TemporalPattern[edge.From] = pattern
 }
@@ -153,22 +143,13 @@ func populateAuditPattern(context *InferenceContext, edge *graph.Edge, sourceGra
 		return
 	}
 	pattern := context.AuditPattern[edge.From]
-	switch columnNode.Label {
-	case "created_by", "CREATED_BY":
+	switch toLower(columnNode.Label) {
+	case "created_by":
 		pattern.HasCreatedBy = true
-	case "updated_by", "UPDATED_BY":
+	case "updated_by":
 		pattern.HasUpdatedBy = true
-	case "deleted_by", "DELETED_BY":
+	case "deleted_by":
 		pattern.HasDeletedBy = true
-	default:
-		lower := toLower(columnNode.Label)
-		if lower == "created_by" {
-			pattern.HasCreatedBy = true
-		} else if lower == "updated_by" {
-			pattern.HasUpdatedBy = true
-		} else if lower == "deleted_by" {
-			pattern.HasDeletedBy = true
-		}
 	}
 	context.AuditPattern[edge.From] = pattern
 }

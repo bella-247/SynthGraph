@@ -46,74 +46,93 @@ func isTrueCycle(schemaGraph *graph.Graph, component []string) bool {
 
 // ── Tarjan's SCC ──────────────────────────────────────────────────────────
 
+// tarjanEngine holds mutable state for Tarjan's strongly connected components
+// algorithm. The struct-with-methods approach replaces a deeply-nested closure
+// and keeps per-method cognitive complexity well below the threshold.
+type tarjanEngine struct {
+	frames       map[string]*tarjanFrame
+	currentIndex int
+	stack        []string
+	components   [][]string
+	adjacency    map[string][]string
+}
+
+type tarjanFrame struct {
+	index   int
+	lowlink int
+	onStack bool
+}
+
+func newTarjanEngine(nodeOrder []string, adjacency map[string][]string) *tarjanEngine {
+	engine := &tarjanEngine{
+		frames:    make(map[string]*tarjanFrame, len(nodeOrder)),
+		adjacency: adjacency,
+	}
+	for _, nodeID := range nodeOrder {
+		engine.frames[nodeID] = &tarjanFrame{index: -1, lowlink: -1}
+	}
+	return engine
+}
+
+func (engine *tarjanEngine) strongConnect(nodeID string) {
+	frame := engine.frames[nodeID]
+	frame.index = engine.currentIndex
+	frame.lowlink = engine.currentIndex
+	engine.currentIndex++
+	engine.stack = append(engine.stack, nodeID)
+	frame.onStack = true
+
+	for _, neighborID := range engine.adjacency[nodeID] {
+		engine.processNeighbor(nodeID, neighborID)
+	}
+
+	if frame.lowlink == frame.index {
+		engine.collectComponent(nodeID)
+	}
+}
+
+func (engine *tarjanEngine) processNeighbor(nodeID, neighborID string) {
+	neighborFrame, exists := engine.frames[neighborID]
+	if !exists {
+		return
+	}
+	currentFrame := engine.frames[nodeID]
+	if neighborFrame.index == -1 {
+		engine.strongConnect(neighborID)
+		if neighborFrame.lowlink < currentFrame.lowlink {
+			currentFrame.lowlink = neighborFrame.lowlink
+		}
+	} else if neighborFrame.onStack {
+		if neighborFrame.index < currentFrame.lowlink {
+			currentFrame.lowlink = neighborFrame.index
+		}
+	}
+}
+
+func (engine *tarjanEngine) collectComponent(nodeID string) {
+	var component []string
+	for {
+		popped := engine.stack[len(engine.stack)-1]
+		engine.stack = engine.stack[:len(engine.stack)-1]
+		engine.frames[popped].onStack = false
+		component = append(component, popped)
+		if popped == nodeID {
+			break
+		}
+	}
+	engine.components = append(engine.components, component)
+}
+
 // tarjanSCC finds all strongly connected components in the given graph
 // using Tarjan's algorithm. Returns components in topological order.
 func tarjanSCC(nodeOrder []string, adjacency map[string][]string) [][]string {
-	type frame struct {
-		index   int
-		lowlink int
-		onStack bool
-	}
-
-	state := make(map[string]*frame, len(nodeOrder))
+	engine := newTarjanEngine(nodeOrder, adjacency)
 	for _, nodeID := range nodeOrder {
-		state[nodeID] = &frame{index: -1, lowlink: -1}
-	}
-
-	var (
-		currentIndex int
-		stack        []string
-		components   [][]string
-	)
-
-	var strongConnect func(nodeID string)
-	strongConnect = func(nodeID string) {
-		f := state[nodeID]
-		f.index = currentIndex
-		f.lowlink = currentIndex
-		currentIndex++
-		stack = append(stack, nodeID)
-		f.onStack = true
-
-		for _, neighborID := range adjacency[nodeID] {
-			neighborState, exists := state[neighborID]
-			if !exists {
-				continue
-			}
-			if neighborState.index == -1 {
-				strongConnect(neighborID)
-				if neighborState.lowlink < f.lowlink {
-					f.lowlink = neighborState.lowlink
-				}
-			} else if neighborState.onStack {
-				if neighborState.index < f.lowlink {
-					f.lowlink = neighborState.index
-				}
-			}
-		}
-
-		if f.lowlink == f.index {
-			var component []string
-			for {
-				popped := stack[len(stack)-1]
-				stack = stack[:len(stack)-1]
-				state[popped].onStack = false
-				component = append(component, popped)
-				if popped == nodeID {
-					break
-				}
-			}
-			components = append(components, component)
+		if engine.frames[nodeID].index == -1 {
+			engine.strongConnect(nodeID)
 		}
 	}
-
-	for _, nodeID := range nodeOrder {
-		if state[nodeID].index == -1 {
-			strongConnect(nodeID)
-		}
-	}
-
-	return components
+	return engine.components
 }
 
 // ── Cycle resolution ──────────────────────────────────────────────────────
@@ -148,6 +167,20 @@ func resolveCycle(schemaGraph *graph.Graph, schemaModel *schema.Model, component
 
 	cycleOrder := orderCycleMembers(component, breakpoint.From, breakpoint.To)
 
+	plans, dfks, buildError := buildCycleTablePlans(cycleOrder, tableNodes, schemaModel, rowCount, breakpoint.From, fkMetadata)
+	if buildError != nil {
+		return nil, nil, buildError
+	}
+
+	fixDeferredFKReferences(dfks, schemaGraph, breakpoint.From, tableNodes)
+
+	return plans, dfks, nil
+}
+
+// buildCycleTablePlans produces TablePlans and initial DeferredFK entries for
+// all tables in a cycle. The breakpoint table's FK columns are marked as
+// deferred (inserted as NULL, backfilled via UPDATE later).
+func buildCycleTablePlans(cycleOrder []string, tableNodes map[string]*graph.Node, schemaModel *schema.Model, rowCount int, breakpointFrom string, fkMetadata *graph.FKMetadata) ([]TablePlan, []DeferredFK, error) {
 	var plans []TablePlan
 	var dfks []DeferredFK
 
@@ -167,58 +200,74 @@ func resolveCycle(schemaGraph *graph.Graph, schemaModel *schema.Model, component
 			RowCount:  rowCount,
 		}
 
-		if tableID == breakpoint.From {
+		if tableID == breakpointFrom {
 			plan.DeferredCols = make([]string, len(fkMetadata.LocalColumns))
 			copy(plan.DeferredCols, fkMetadata.LocalColumns)
-
-			for i, localCol := range fkMetadata.LocalColumns {
-				refCol := ""
-				if i < len(fkMetadata.ForeignColumns) {
-					refCol = fkMetadata.ForeignColumns[i]
-				}
-				dfks = append(dfks, DeferredFK{
-					Table:      tableData.Name,
-					Column:     localCol,
-					References: tableData.Name,
-					RefColumn:  refCol,
-				})
-			}
+			dfks = buildDeferredFKs(fkMetadata, tableData.Name)
 		}
 
 		plans = append(plans, plan)
 	}
 
-	// Fix ReferencedTable in DeferredFK entries: it should point to the
-	// referenced table, not the current table.
-	for i, dfk := range dfks {
+	return plans, dfks, nil
+}
+
+// buildDeferredFKs creates DeferredFK entries for the breakpoint table's FK
+// columns. The References field is initially set to the table itself and is
+// corrected later by fixDeferredFKReferences.
+func buildDeferredFKs(fkMetadata *graph.FKMetadata, tableName string) []DeferredFK {
+	dfks := make([]DeferredFK, 0, len(fkMetadata.LocalColumns))
+	for index, localColumn := range fkMetadata.LocalColumns {
+		refColumn := ""
+		if index < len(fkMetadata.ForeignColumns) {
+			refColumn = fkMetadata.ForeignColumns[index]
+		}
+		dfks = append(dfks, DeferredFK{
+			Table:      tableName,
+			Column:     localColumn,
+			References: tableName,
+			RefColumn:  refColumn,
+		})
+	}
+	return dfks
+}
+
+// fixDeferredFKReferences corrects the References and RefColumn fields in
+// DeferredFK entries. The initial build sets them to the source table; this
+// function resolves them to the actual FK target by scanning foreign key edges.
+func fixDeferredFKReferences(dfks []DeferredFK, schemaGraph *graph.Graph, breakpointFrom string, tableNodes map[string]*graph.Node) {
+	for dfkIndex := range dfks {
 		for _, edge := range schemaGraph.Edges {
 			if edge.Kind != graph.EdgeKindReferences {
 				continue
 			}
-			if edge.From != breakpoint.From {
+			if edge.From != breakpointFrom {
 				continue
 			}
-			meta, ok := edge.Metadata.(*graph.FKMetadata)
-			if !ok {
-				continue
-			}
-			for j, lc := range meta.LocalColumns {
-				if lc == dfk.Column {
-					toNodeID := edge.To
-					if toNode, exists := tableNodes[toNodeID]; exists {
-						toData := toNode.Data.(graph.TableData)
-						dfks[i].References = toData.Name
-						if j < len(meta.ForeignColumns) {
-							dfks[i].RefColumn = meta.ForeignColumns[j]
-						}
-					}
-					break
-				}
-			}
+			updateDeferredFKFromEdge(&dfks[dfkIndex], edge, tableNodes)
 		}
 	}
+}
 
-	return plans, dfks, nil
+// updateDeferredFKFromEdge scans a single FK edge's metadata and updates
+// the deferred FK entry with the correct referenced table and column names.
+func updateDeferredFKFromEdge(deferredFK *DeferredFK, edge *graph.Edge, tableNodes map[string]*graph.Node) {
+	fkMetadata, hasMetadata := edge.Metadata.(*graph.FKMetadata)
+	if !hasMetadata {
+		return
+	}
+	for columnIndex, localColumn := range fkMetadata.LocalColumns {
+		if localColumn == deferredFK.Column {
+			if targetNode, nodeExists := tableNodes[edge.To]; nodeExists {
+				targetData := targetNode.Data.(graph.TableData)
+				deferredFK.References = targetData.Name
+				if columnIndex < len(fkMetadata.ForeignColumns) {
+					deferredFK.RefColumn = fkMetadata.ForeignColumns[columnIndex]
+				}
+			}
+			return
+		}
+	}
 }
 
 // findBreakpoint searches for a nullable FK edge within a component.
@@ -251,14 +300,24 @@ func allColumnsNullable(schemaGraph *graph.Graph, edge *graph.Edge) bool {
 		return false
 	}
 
-	localColumnSet := make(map[string]bool, len(fkMetadata.LocalColumns))
-	for _, col := range fkMetadata.LocalColumns {
-		localColumnSet[col] = true
-	}
+	nullableStatus := collectNullableStatus(schemaGraph, edge, fkMetadata)
 
+	for _, nullable := range nullableStatus {
+		if !nullable {
+			return false
+		}
+	}
+	return true
+}
+
+// collectNullableStatus scans the graph's Contains edges for the FK source
+// table and records whether each FK-local column is nullable or not.
+func collectNullableStatus(schemaGraph *graph.Graph, edge *graph.Edge, fkMetadata *graph.FKMetadata) map[string]bool {
+	localColumnSet := make(map[string]bool, len(fkMetadata.LocalColumns))
 	nullableStatus := make(map[string]bool, len(fkMetadata.LocalColumns))
-	for _, col := range fkMetadata.LocalColumns {
-		nullableStatus[col] = false
+	for _, column := range fkMetadata.LocalColumns {
+		localColumnSet[column] = true
+		nullableStatus[column] = false
 	}
 
 	for _, graphEdge := range schemaGraph.Edges {
@@ -275,8 +334,8 @@ func allColumnsNullable(schemaGraph *graph.Graph, edge *graph.Edge) bool {
 		if !localColumnSet[columnNode.Label] {
 			continue
 		}
-		columnData, ok := columnNode.Data.(graph.ColumnData)
-		if !ok {
+		columnData, hasData := columnNode.Data.(graph.ColumnData)
+		if !hasData {
 			continue
 		}
 		if columnData.Nullable {
@@ -284,12 +343,60 @@ func allColumnsNullable(schemaGraph *graph.Graph, edge *graph.Edge) bool {
 		}
 	}
 
-	for _, nullable := range nullableStatus {
-		if !nullable {
-			return false
+	return nullableStatus
+}
+
+// classifyUnresolvedComponents runs Tarjan's SCC on the unresolved nodes
+// and separates the resulting components into true cycles (mutual FK
+// dependencies) and blocked nodes (DAG nodes that depend on a cycle node).
+func classifyUnresolvedComponents(schemaGraph *graph.Graph, unresolved []string) (trueCycles [][]string, blockedNodes []string) {
+	unresolvedSet := makeStringSet(unresolved)
+	adjacency := restrictEdgesToSet(schemaGraph, unresolvedSet)
+	components := tarjanSCC(unresolved, adjacency)
+
+	for _, comp := range components {
+		if len(comp) == 0 {
+			continue
+		}
+		if isTrueCycle(schemaGraph, comp) {
+			trueCycles = append(trueCycles, comp)
+		} else {
+			blockedNodes = append(blockedNodes, comp...)
 		}
 	}
-	return true
+	return trueCycles, blockedNodes
+}
+
+// resolveAllCycles processes all true cycle components, producing TablePlans
+// and DeferredFK entries for each. It also builds the availableSet — a set of
+// node IDs whose data has been generated — by marking cycle nodes as available
+// after resolution. The availableSet is seeded with already-ordered nodes and is
+// used by processBlockedTables to determine when blocked dependencies are met.
+func resolveAllCycles(
+	schemaGraph *graph.Graph,
+	schemaModel *schema.Model,
+	trueCycleComponents [][]string,
+	tableNodes map[string]*graph.Node,
+	ordered []string,
+	rowCount int,
+) ([]TablePlan, []DeferredFK, map[string]bool, error) {
+	availableSet := makeStringSet(ordered)
+	var allPlans []TablePlan
+	var dfkList []DeferredFK
+
+	for _, cycle := range trueCycleComponents {
+		cyclePlans, cycleDFKs, resolveError := resolveCycle(schemaGraph, schemaModel, cycle, tableNodes, rowCount)
+		if resolveError != nil {
+			return nil, nil, nil, resolveError
+		}
+		allPlans = append(allPlans, cyclePlans...)
+		dfkList = append(dfkList, cycleDFKs...)
+		for _, nodeID := range cycle {
+			availableSet[nodeID] = true
+		}
+	}
+
+	return allPlans, dfkList, availableSet, nil
 }
 
 // orderCycleMembers produces a valid generation order for a cycle.
