@@ -11,8 +11,6 @@ import (
 	"synthgraph/internal/exporter"
 	"synthgraph/internal/generator"
 	"synthgraph/internal/graph"
-	"synthgraph/internal/parser"
-	"synthgraph/internal/parser/postgresql"
 	"synthgraph/internal/planner"
 	"synthgraph/internal/schema"
 	"synthgraph/internal/semantic"
@@ -100,12 +98,7 @@ func (c *generateConfig) validate() error {
 }
 
 func generateData(config *generateConfig) (*generator.Dataset, *schema.Model, error) {
-	sqlBytes, err := os.ReadFile(config.input)
-	if err != nil {
-		return nil, nil, fmt.Errorf("reading input file: %w", err)
-	}
-
-	model, err := parseSchema(sqlBytes)
+	model, err := parseSQLFile(config.input)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parsing schema: %w", err)
 	}
@@ -168,23 +161,4 @@ func exportData(config *generateConfig, dataset *generator.Dataset, model *schem
 	default:
 		return fmt.Errorf("unsupported format: %s", config.format)
 	}
-}
-
-// parseSchema parses SQL bytes using the registered parser.
-func parseSchema(sqlBytes []byte) (*schema.Model, error) {
-	registry := parser.NewRegistry()
-	registry.Register(postgresql.New())
-	// Find a parser by trying registered parsers.
-	for _, name := range registry.Names() {
-		p, err := registry.Get(name)
-		if err != nil {
-			continue
-		}
-		model, err := p.Parse(sqlBytes)
-		if err == nil {
-			return model, nil
-		}
-	}
-	return nil, fmt.Errorf("no parser could process the input (supported: %s)",
-		strings.Join(registry.Names(), ", "))
 }
