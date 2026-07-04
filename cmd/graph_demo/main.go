@@ -19,6 +19,7 @@ import (
 	"synthgraph/internal/parser/postgresql"
 	"synthgraph/internal/render/mermaid"
 	"synthgraph/internal/schema"
+	"synthgraph/internal/semantic"
 )
 
 func main() {
@@ -198,6 +199,21 @@ func main() {
 	}
 
 	fmt.Print(summarizeGraph(schemaGraph))
+	fmt.Println()
+
+	// ── Phase 4: Build the Semantic Graph ──────────────────────────────────
+
+	fmt.Println(strings.Repeat("═", 72))
+	fmt.Println("PHASE 4 — SEMANTIC GRAPH (INFERRED ROLES & RELATIONSHIPS)")
+	fmt.Println(strings.Repeat("═", 72))
+
+	semanticGraph, err := semantic.Build(schemaGraph)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "\nError during semantic graph construction: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Print(summarizeSemanticGraph(semanticGraph))
 	fmt.Println()
 
 	// ── Phase 3: Full JSON dump ───────────────────────────────────────────
@@ -472,4 +488,69 @@ func dumpGraphAsJSON(schemaGraph *graph.Graph) string {
 		return fmt.Sprintf("JSON encoding error: %v", err)
 	}
 	return string(encoded)
+}
+
+// ── Semantic graph summary ────────────────────────────────────────────────────
+
+func summarizeSemanticGraph(semanticGraph *semantic.SemanticGraph) string {
+	var builder strings.Builder
+
+	// Table roles
+	builder.WriteString("\n  Table Roles:\n")
+	for _, node := range semanticGraph.NodeList {
+		if node.Kind != graph.NodeKindTable {
+			continue
+		}
+		roleNames := make([]string, 0, len(node.Roles))
+		for _, role := range node.Roles {
+			roleNames = append(roleNames, string(role))
+		}
+		builder.WriteString(fmt.Sprintf("    ▸ %-30s  %s\n", node.Label, strings.Join(roleNames, ", ")))
+	}
+
+	// Temporal / audit / soft-delete
+	builder.WriteString("\n  Temporal & Audit Patterns:\n")
+	for _, node := range semanticGraph.NodeList {
+		if node.Kind != graph.NodeKindTable {
+			continue
+		}
+		details := make([]string, 0, 5)
+		if node.Temporal != nil {
+			if node.Temporal.HasCreatedAt {
+				details = append(details, "created_at")
+			}
+			if node.Temporal.HasUpdatedAt {
+				details = append(details, "updated_at")
+			}
+			if node.Temporal.HasDeletedAt {
+				details = append(details, "deleted_at")
+			}
+		}
+		if node.IsSoftDelete {
+			details = append(details, "soft_delete")
+		}
+		if node.Audit != nil {
+			if node.Audit.HasCreatedBy {
+				details = append(details, "created_by")
+			}
+			if node.Audit.HasUpdatedBy {
+				details = append(details, "updated_by")
+			}
+			if node.Audit.HasDeletedBy {
+				details = append(details, "deleted_by")
+			}
+		}
+		if len(details) > 0 {
+			builder.WriteString(fmt.Sprintf("    ▸ %-30s  %s\n", node.Label, strings.Join(details, ", ")))
+		}
+	}
+
+	// Relationship semantics
+	builder.WriteString("\n  Relationship Semantics:\n")
+	for _, rel := range semanticGraph.Relationships {
+		builder.WriteString(fmt.Sprintf("    %-26s  →  %-26s  [%s]\n",
+			rel.From, rel.To, rel.Kind))
+	}
+
+	return builder.String()
 }
