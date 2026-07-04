@@ -1,6 +1,8 @@
 package semantic
 
 import (
+	"strconv"
+
 	"synthgraph/internal/graph"
 )
 
@@ -244,29 +246,7 @@ func hasJunctionSignal(tableData graph.TableData, foreignKeyColumnIndex map[stri
 	return true
 }
 
-// countString converts an integer to its string representation. This small helper
-// keeps inline string concatenation in evidence messages readable.
+// countString converts an integer to its string representation.
 func countString(value int) string {
-	if value == 1 {
-		return "1"
-	}
-	// For small ints (the only use case here), a simple conversion is sufficient.
-	result := ""
-	absoluteValue := value
-	if absoluteValue < 0 {
-		result = "-"
-		absoluteValue = -absoluteValue
-	}
-	digits := make([]byte, 0, 10)
-	for absoluteValue > 0 {
-		digits = append(digits, byte('0'+absoluteValue%10))
-		absoluteValue /= 10
-	}
-	if len(digits) == 0 {
-		digits = append(digits, '0')
-	}
-	for index := len(digits) - 1; index >= 0; index-- {
-		result += string(digits[index])
-	}
-	return result
+	return strconv.Itoa(value)
 }

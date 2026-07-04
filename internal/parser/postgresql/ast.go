@@ -59,15 +59,6 @@ type ColumnDef struct {
 	Comment      string
 }
 
-// DefaultExpr preserves semantic information about a default value expression.
-// In V1, defaults are stored as raw strings. This type exists for future
-// use when the generator needs to understand default expressions semantically
-// (e.g., CURRENT_TIMESTAMP → generate current time).
-type DefaultExpr struct {
-	Raw      string // the deparsed default expression as PostgreSQL renders it
-	FuncName string // non-empty if this is a function call like now(), gen_random_uuid()
-}
-
 // ColumnType represents a PostgreSQL column type.
 type ColumnType struct {
 	BaseType  string // "integer", "varchar", "timestamp", etc.
@@ -75,7 +66,6 @@ type ColumnType struct {
 	Precision int    // for decimal(p,s)
 	IsSerial  bool   // SERIAL / BIGSERIAL
 	IsArray   bool   // type[]
-	EnumName  string // for enum types, the name of the enum
 }
 
 // TableConstraint represents a table-level constraint (PK, FK, UNIQUE, CHECK).

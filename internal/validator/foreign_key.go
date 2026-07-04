@@ -31,18 +31,7 @@ func checkForeignKeys(
 		}
 
 		for rowIndex, row := range table.Rows {
-			// Build the composite FK value key.
-			var fkValue string
-			if len(fk.Columns) == 1 {
-				fkValue = fmt.Sprintf("%v", row[fk.Columns[0]])
-			} else {
-				for i, col := range fk.Columns {
-					if i > 0 {
-						fkValue += "::"
-					}
-					fkValue += fmt.Sprintf("%v", row[col])
-				}
-			}
+			fkValue := compositeKey(row, fk.Columns)
 
 			// Nil FK values are valid (even for NOT NULL columns that were
 			// deferred for cycle resolution and backfilled). Check if the

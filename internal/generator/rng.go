@@ -1,7 +1,6 @@
 package generator
 
 import (
-	"encoding/binary"
 	"fmt"
 	"hash/fnv"
 	"math/rand/v2"
@@ -55,6 +54,3 @@ func buildEnumValues(model *schema.Model) map[string][]string {
 	}
 	return values
 }
-
-// Uvarint usage kept for potential binary encoding use in tests.
-var _ = binary.PutUvarint

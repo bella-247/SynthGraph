@@ -45,6 +45,7 @@ var builtInGenerators = map[string]TypeGenerator{
 	"float4":  floatGenerator{},
 	"float8":  floatGenerator{},
 	"real":    floatGenerator{},
+	"double":  floatGenerator{},
 	"double precision": floatGenerator{},
 
 	"json":  jsonGenerator{},

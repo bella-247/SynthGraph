@@ -14,14 +14,6 @@ func newUniqueTracker(table *schema.Table) *uniqueTracker {
 		seen:       make(map[string]map[any]bool),
 	}
 
-	for _, col := range table.Columns {
-		if col.Name == "" {
-			continue
-		}
-		if isPrimaryKeyColumn(col.Name, table.PrimaryKey) {
-			tracker.uniqueCols[col.Name] = true
-		}
-	}
 	for _, uniqueConstraint := range table.Unique {
 		for _, col := range uniqueConstraint {
 			tracker.uniqueCols[col] = true

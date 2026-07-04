@@ -88,7 +88,7 @@ func applyInferenceToNode(semanticNode *SemanticNode, inference Inference) {
 
 	// Special handling for non-role inferences:
 	switch inference.Kind {
-	case "hierarchical":
+	case string(TableRoleHierarchical):
 		semanticNode.IsHierarchical = true
 	case "temporal":
 		applyTemporalInference(semanticNode, inference)
