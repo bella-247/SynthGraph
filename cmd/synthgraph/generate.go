@@ -25,6 +25,7 @@ type generateConfig struct {
 	rows       int
 	seed       int64
 	schemaName string
+	verbose    bool
 }
 
 func runGenerate(args []string) {
@@ -33,13 +34,17 @@ func runGenerate(args []string) {
 		if errors.Is(err, flag.ErrHelp) {
 			return
 		}
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		globalLogger.Error("%v", err)
 		os.Exit(1)
 	}
 
 	if err := config.validate(); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		globalLogger.Error("%v", err)
 		os.Exit(1)
+	}
+
+	if config.verbose {
+		globalLogger = NewLogger(LevelDebug)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -47,14 +52,14 @@ func runGenerate(args []string) {
 
 	model, parseErr := parseSQLFile(config.input)
 	if parseErr != nil {
-		fmt.Fprintf(os.Stderr, "error: parsing schema: %v\n", parseErr)
+		globalLogger.Error("parsing schema: %v", parseErr)
 		os.Exit(1)
 	}
 
 	if validationErrors := schema.Validate(model); len(validationErrors) > 0 {
-		fmt.Fprintf(os.Stderr, "error: schema validation failed:\n")
+		globalLogger.Error("schema validation failed:")
 		for _, ve := range validationErrors {
-			fmt.Fprintf(os.Stderr, "  - %v\n", ve)
+			globalLogger.Error("  - %v", ve)
 		}
 		os.Exit(1)
 	}
@@ -62,28 +67,32 @@ func runGenerate(args []string) {
 	dataset, genErr := generateData(ctx, model, config)
 	if genErr != nil {
 		if errors.Is(genErr, generator.ErrCancelled) {
-			fmt.Fprintf(os.Stderr, "\nwarning: generation cancelled — exporting partial data (%d tables)\n", len(dataset.Tables))
+			globalLogger.Error("generation cancelled — exporting partial data (%d tables)", len(dataset.Tables))
 		} else {
-			fmt.Fprintf(os.Stderr, "error: generation failed: %v\n", genErr)
+			globalLogger.Error("generation failed: %v", genErr)
 			os.Exit(1)
 		}
 	}
 
 	if len(dataset.Errors) > 0 {
 		for _, pe := range dataset.Errors {
-			fmt.Fprintf(os.Stderr, "warning: table %q skipped: %v\n", pe.Table, pe.Err)
+			globalLogger.Error("table %q skipped: %v", pe.Table, pe.Err)
 		}
 	}
 
 	if len(dataset.Tables) == 0 {
-		fmt.Fprintf(os.Stderr, "error: no tables were generated\n")
+		globalLogger.Error("no tables were generated")
 		os.Exit(1)
 	}
 
+	globalLogger.Info("generated %d table(s)", len(dataset.Tables))
+
 	if err := exportData(config, dataset, model); err != nil {
-		fmt.Fprintf(os.Stderr, "error: export failed: %v\n", err)
+		globalLogger.Error("export failed: %v", err)
 		os.Exit(1)
 	}
+
+	globalLogger.Debug("output format: %s", config.format)
 }
 
 func parseGenerateFlags(args []string) (*generateConfig, error) {
@@ -103,6 +112,8 @@ func parseGenerateFlags(args []string) (*generateConfig, error) {
 	flags.Int64Var(&config.seed, "seed", 42, "Global random seed for determinism")
 	flags.Int64Var(&config.seed, "s", 42, "Global random seed for determinism")
 	flags.StringVar(&config.schemaName, "schema-name", "", "Schema name for SQL output (optional)")
+	flags.BoolVar(&config.verbose, "v", false, "Enable verbose logging")
+	flags.BoolVar(&config.verbose, "verbose", false, "Enable verbose logging")
 
 	if err := flags.Parse(args); err != nil {
 		return nil, err
