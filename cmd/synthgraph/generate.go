@@ -46,6 +46,17 @@ func runGenerate(args []string) {
 		os.Exit(1)
 	}
 
+	if len(dataset.Errors) > 0 {
+		for _, pe := range dataset.Errors {
+			fmt.Fprintf(os.Stderr, "warning: table %q skipped: %v\n", pe.Table, pe.Err)
+		}
+	}
+
+	if len(dataset.Tables) == 0 {
+		fmt.Fprintf(os.Stderr, "error: no tables were generated\n")
+		os.Exit(1)
+	}
+
 	if err := exportData(config, dataset, model); err != nil {
 		fmt.Fprintf(os.Stderr, "error: export failed: %v\n", err)
 		os.Exit(1)
