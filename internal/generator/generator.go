@@ -48,13 +48,6 @@ import (
 
 // ── Output types ──────────────────────────────────────────────────────────
 
-// Dataset is the complete output of the generator. It contains all generated
-// rows for every table in the schema.
-type Dataset struct {
-	// Tables maps table name → generated rows, preserving generation order.
-	Tables []*GeneratedTable
-}
-
 // GeneratedTable holds all generated rows for a single table.
 type GeneratedTable struct {
 	// TableName is the fully-qualified table name.
@@ -89,6 +82,23 @@ type GenerationContext struct {
 
 	// SemanticGraph carries inferred roles, relationships, and patterns.
 	SemanticGraph *semantic.SemanticGraph
+}
+
+// PartialError records a generation failure for a single table when the
+// generator is configured to continue on error.
+type PartialError struct {
+	// Table is the table that failed to generate.
+	Table string
+
+	// Err is the underlying error.
+	Err error
+}
+
+// Dataset is the complete output of the generator. It contains all generated
+// rows for every table in the schema.
+type Dataset struct {
+	Tables []*GeneratedTable
+	Errors []PartialError
 }
 
 // GenError describes a generation failure.

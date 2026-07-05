@@ -12,7 +12,7 @@ import (
 var ErrCancelled = errors.New("generation cancelled")
 
 // Generate consumes a GenerationPlan and GenerationContext and produces a
-// complete Dataset with all rows for every table.
+// Dataset with all rows for every table.
 //
 // The generation follows the plan's order exactly. For acyclic tables,
 // referenced tables are already populated when FK-dependent tables are
@@ -22,6 +22,10 @@ var ErrCancelled = errors.New("generation cancelled")
 // If ctx.Context is cancelled during generation, Generate returns the
 // partial Dataset along with ErrCancelled. The caller may still export
 // the partial data.
+//
+// If a single table fails, generation continues with the remaining tables
+// and the error is recorded in Dataset.Errors. Only a complete failure of
+// every table causes Generate to return an error.
 func Generate(plan *planner.GenerationPlan, ctx *GenerationContext) (*Dataset, error) {
 	// Pre-compute FK column → referenced table mapping for efficient lookups.
 	fkMap := buildFKColumnMap(ctx.Graph)
@@ -44,7 +48,11 @@ func Generate(plan *planner.GenerationPlan, ctx *GenerationContext) (*Dataset, e
 
 		generatedTable, err := generateTable(tablePlan, ctx, fkMap, enumValues, tablePKs)
 		if err != nil {
-			return nil, err
+			dataset.Errors = append(dataset.Errors, PartialError{
+				Table: tablePlan.TableName,
+				Err:   err,
+			})
+			continue
 		}
 		dataset.Tables = append(dataset.Tables, generatedTable)
 
@@ -59,8 +67,16 @@ func Generate(plan *planner.GenerationPlan, ctx *GenerationContext) (*Dataset, e
 			return dataset, ErrCancelled
 		}
 		if err := backfillDeferredFKs(dataset, plan.DeferredFKs, tablePKs, ctx); err != nil {
-			return nil, err
+			dataset.Errors = append(dataset.Errors, PartialError{
+				Table: "(backfill)",
+				Err:   err,
+			})
 		}
+	}
+
+	// If no tables succeeded, report the first error.
+	if len(dataset.Tables) == 0 && len(dataset.Errors) > 0 {
+		return dataset, dataset.Errors[0].Err
 	}
 
 	return dataset, nil

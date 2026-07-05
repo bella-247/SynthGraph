@@ -274,7 +274,7 @@ func updateDeferredFKFromEdge(deferredFK *DeferredFK, edge *graph.Edge, tableNod
 // A breakpoint is an EdgeKindReferences edge where all FK source columns
 // are nullable. Returns nil if no such edge exists.
 func findBreakpoint(schemaGraph *graph.Graph, component []string) *graph.Edge {
-	componentSet := makeStringSet(component)
+		componentSet := graph.StringSet(component)
 
 	for _, edge := range schemaGraph.Edges {
 		if edge.Kind != graph.EdgeKindReferences {
@@ -350,7 +350,7 @@ func collectNullableStatus(schemaGraph *graph.Graph, edge *graph.Edge, fkMetadat
 // and separates the resulting components into true cycles (mutual FK
 // dependencies) and blocked nodes (DAG nodes that depend on a cycle node).
 func classifyUnresolvedComponents(schemaGraph *graph.Graph, unresolved []string) (trueCycles [][]string, blockedNodes []string) {
-	unresolvedSet := makeStringSet(unresolved)
+	unresolvedSet := graph.StringSet(unresolved)
 	adjacency := restrictEdgesToSet(schemaGraph, unresolvedSet)
 	components := tarjanSCC(unresolved, adjacency)
 
@@ -380,7 +380,7 @@ func resolveAllCycles(
 	ordered []string,
 	rowCount int,
 ) ([]TablePlan, []DeferredFK, map[string]bool, error) {
-	availableSet := makeStringSet(ordered)
+	availableSet := graph.StringSet(ordered)
 	var allPlans []TablePlan
 	var dfkList []DeferredFK
 

@@ -45,14 +45,39 @@ func runGenerate(args []string) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	dataset, model, err := generateData(ctx, config)
-	if err != nil {
-		if errors.Is(err, generator.ErrCancelled) {
+	model, parseErr := parseSQLFile(config.input)
+	if parseErr != nil {
+		fmt.Fprintf(os.Stderr, "error: parsing schema: %v\n", parseErr)
+		os.Exit(1)
+	}
+
+	if validationErrors := schema.Validate(model); len(validationErrors) > 0 {
+		fmt.Fprintf(os.Stderr, "error: schema validation failed:\n")
+		for _, ve := range validationErrors {
+			fmt.Fprintf(os.Stderr, "  - %v\n", ve)
+		}
+		os.Exit(1)
+	}
+
+	dataset, genErr := generateData(ctx, model, config)
+	if genErr != nil {
+		if errors.Is(genErr, generator.ErrCancelled) {
 			fmt.Fprintf(os.Stderr, "\nwarning: generation cancelled — exporting partial data (%d tables)\n", len(dataset.Tables))
 		} else {
-			fmt.Fprintf(os.Stderr, "error: generation failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error: generation failed: %v\n", genErr)
 			os.Exit(1)
 		}
+	}
+
+	if len(dataset.Errors) > 0 {
+		for _, pe := range dataset.Errors {
+			fmt.Fprintf(os.Stderr, "warning: table %q skipped: %v\n", pe.Table, pe.Err)
+		}
+	}
+
+	if len(dataset.Tables) == 0 {
+		fmt.Fprintf(os.Stderr, "error: no tables were generated\n")
+		os.Exit(1)
 	}
 
 	if err := exportData(config, dataset, model); err != nil {
@@ -106,25 +131,20 @@ func (c *generateConfig) validate() error {
 	return nil
 }
 
-func generateData(ctx context.Context, config *generateConfig) (*generator.Dataset, *schema.Model, error) {
-	model, err := parseSQLFile(config.input)
-	if err != nil {
-		return nil, nil, fmt.Errorf("parsing schema: %w", err)
-	}
-
+func generateData(ctx context.Context, model *schema.Model, config *generateConfig) (*generator.Dataset, error) {
 	g, err := graph.Build(model)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building graph: %w", err)
+		return nil, fmt.Errorf("building graph: %w", err)
 	}
 
 	sg, err := semantic.Build(g)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building semantic graph: %w", err)
+		return nil, fmt.Errorf("building semantic graph: %w", err)
 	}
 
 	plan, err := planner.BuildPlan(g, model, config.rows)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building generation plan: %w", err)
+		return nil, fmt.Errorf("building generation plan: %w", err)
 	}
 
 	genCtx := &generator.GenerationContext{
@@ -137,10 +157,10 @@ func generateData(ctx context.Context, config *generateConfig) (*generator.Datas
 
 	dataset, err := generator.Generate(plan, genCtx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("generating data: %w", err)
+		return nil, fmt.Errorf("generating data: %w", err)
 	}
 
-	return dataset, model, nil
+	return dataset, nil
 }
 
 func exportData(config *generateConfig, dataset *generator.Dataset, model *schema.Model) error {
