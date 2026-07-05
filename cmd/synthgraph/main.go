@@ -42,5 +42,9 @@ Usage:
   synthgraph version            Print version information
 
 Use "synthgraph <subcommand> --help" for more details about each subcommand.
+
+Global flags (before subcommand):
+  --config <file>             Path to YAML config file
+  --init-config [<file>]      Write default config template
 `)
 }
