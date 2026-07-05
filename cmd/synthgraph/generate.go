@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
 
 	"synthgraph/internal/exporter"
@@ -40,6 +42,9 @@ func runGenerate(args []string) {
 		os.Exit(1)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	model, parseErr := parseSQLFile(config.input)
 	if parseErr != nil {
 		fmt.Fprintf(os.Stderr, "error: parsing schema: %v\n", parseErr)
@@ -54,15 +59,14 @@ func runGenerate(args []string) {
 		os.Exit(1)
 	}
 
-	dataset, genErr := generateData(model, config)
+	dataset, genErr := generateData(ctx, model, config)
 	if genErr != nil {
-		fmt.Fprintf(os.Stderr, "error: generation failed: %v\n", genErr)
-		os.Exit(1)
-	}
-
-	if len(dataset.Tables) == 0 {
-		fmt.Fprintf(os.Stderr, "error: no tables were generated\n")
-		os.Exit(1)
+		if errors.Is(genErr, generator.ErrCancelled) {
+			fmt.Fprintf(os.Stderr, "\nwarning: generation cancelled — exporting partial data (%d tables)\n", len(dataset.Tables))
+		} else {
+			fmt.Fprintf(os.Stderr, "error: generation failed: %v\n", genErr)
+			os.Exit(1)
+		}
 	}
 
 	if len(dataset.Errors) > 0 {
@@ -127,7 +131,7 @@ func (c *generateConfig) validate() error {
 	return nil
 }
 
-func generateData(model *schema.Model, config *generateConfig) (*generator.Dataset, error) {
+func generateData(ctx context.Context, model *schema.Model, config *generateConfig) (*generator.Dataset, error) {
 	g, err := graph.Build(model)
 	if err != nil {
 		return nil, fmt.Errorf("building graph: %w", err)
@@ -143,14 +147,15 @@ func generateData(model *schema.Model, config *generateConfig) (*generator.Datas
 		return nil, fmt.Errorf("building generation plan: %w", err)
 	}
 
-	ctx := &generator.GenerationContext{
+	genCtx := &generator.GenerationContext{
+		Context:       ctx,
 		GlobalSeed:    uint64(config.seed),
 		Model:         model,
 		Graph:         g,
 		SemanticGraph: sg,
 	}
 
-	dataset, err := generator.Generate(plan, ctx)
+	dataset, err := generator.Generate(plan, genCtx)
 	if err != nil {
 		return nil, fmt.Errorf("generating data: %w", err)
 	}

@@ -37,6 +37,7 @@
 package generator
 
 import (
+	"context"
 	"fmt"
 	"math/rand/v2"
 
@@ -64,6 +65,11 @@ type GeneratedRow map[string]any
 // GenerationContext carries all configuration and reference data needed by the
 // generator. It is constructed once and shared across all table generators.
 type GenerationContext struct {
+	// Context controls cancellation. When cancelled, the generator stops after
+	// the current table and returns partial results. If nil, no cancellation
+	// is performed (backward compatible default).
+	Context context.Context
+
 	// GlobalSeed is the master seed for the entire generation run.
 	// Every table derives its own deterministic seed from this value.
 	GlobalSeed uint64
