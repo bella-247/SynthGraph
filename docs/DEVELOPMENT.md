@@ -11,7 +11,8 @@ Everything you need to build, test, run, and extend SynthGraph during developmen
 - [Building](#building)
 - [Running Tests](#running-tests)
 - [Running the CLI](#running-the-cli)
-- [Running the Schema Visualizer](#running-the-schema-visualizer)
+- [Running the Web Application](#running-the-web-application)
+- [Running the Lightweight Graph Visualizer](#running-the-lightweight-graph-visualizer)
 - [Adding a New Parser Dialect](#adding-a-new-parser-dialect)
 - [Adding a New Inference Rule](#adding-a-new-inference-rule)
 - [Adding a New Type Generator](#adding-a-new-type-generator)
@@ -60,15 +61,20 @@ gcc --version    # → gcc (x86_64-posix) ...
 
 ```
 synthgraph/
-├── cmd/
-│   ├── synthgraph/
-│   │   ├── main.go           # CLI entry point — subcommand dispatch
-│   │   ├── generate.go       # "synthgraph generate" — full generation pipeline
-│   │   ├── inspect.go        # "synthgraph inspect" — schema analysis
-│   │   └── version.go        # "synthgraph version" — version info
-│   └── serveviz/
-│       ├── main.go            # Web visualizer server (embedded HTML, /api/graph endpoint)
-│       └── index.html         # Cytoscape.js schema graph visualizer
+ ├── cmd/
+ │   ├── synthgraph/
+ │   │   ├── main.go           # CLI entry point — subcommand dispatch
+ │   │   ├── config.go         # YAML config file types and loader
+ │   │   ├── generate.go       # "synthgraph generate" — full generation pipeline
+ │   │   ├── inspect.go        # "synthgraph inspect" — schema analysis
+ │   │   └── version.go        # "synthgraph version" — version info
+ │   ├── synthgraph-web/
+ │   │   ├── main.go            # HTTP server + route registration
+ │   │   ├── server.go          # REST API handlers (parse, graph, semantic, generate, jobs)
+ │   │   └── index.html         # Embedded SPA (Cytoscape.js graph viz, 4-page pipeline UI)
+ │   └── serveviz/
+ │       ├── main.go            # Lightweight read-only graph visualizer
+ │       └── index.html         # Embedded HTML (Cytoscape.js)
 │
 ├── internal/
 │   ├── schema/
@@ -107,12 +113,12 @@ synthgraph/
 │   │   ├── infer_relationships.go  # Relationship inference logic
 │   │   └── builder_test.go
 │   │
-│   ├── planner/
-│   │   ├── planner.go         # GenerationPlan, TablePlan types
-│   │   ├── builder.go         # BuildPlan() — topological sort + cycle detection
-│   │   └── planner_test.go
-│   │
-│   ├── generator/
+ │   ├── planner/
+ │   │   ├── planner.go         # GenerationPlan, TablePlan types
+ │   │   ├── builder.go         # BuildPlan() — topological sort + cycle detection
+ │   │   └── planner_test.go
+ │   │
+ │   ├── generator/
 │   │   ├── dataset.go         # Dataset, GeneratedTable, GeneratedRow types
 │   │   ├── engine.go          # Generate() — main generation orchestrator
 │   │   ├── generate_row.go    # Per-table row generation loop
@@ -179,19 +185,13 @@ SQL File → Parser (CGO) → AST → Normalize → Link → Validate → Build
                                                         │  GenerationPlan
                                                         │     │
                                                         │     ▼
-                                                        │  generator.Generate()
-                                                        │     │
-                                                        │     ▼
-                                                        │  Dataset
-                                                        │     │
-                                                        │     ▼
-                                                        │  validator.Validate()
-                                                        │     │
-                                                        │     ▼
-                                                        │  ValidationResult
-                                                        │     │
-                                                        │     ▼
-                                                        │  exporter.ExportSQL/ExportCSV
+                                                         │  generator.Generate()
+                                                         │     │
+                                                         │     ▼
+                                                         │  Dataset
+                                                         │     │
+                                                         │     ▼
+                                                         │  exporter.ExportSQL/ExportCSV
 ```
 
 ---
@@ -207,7 +207,10 @@ rtk CGO_ENABLED=1 go build -o synthgraph.exe ./cmd/synthgraph/
 # Build all packages (no binary output)
 rtk CGO_ENABLED=1 go build ./...
 
-# Build the web visualizer
+# Build the web application
+rtk CGO_ENABLED=1 go build -o synthgraph-web.exe ./cmd/synthgraph-web/
+
+# Build the lightweight visualizer
 rtk CGO_ENABLED=1 go build -o serveviz.exe ./cmd/serveviz/
 ```
 
@@ -273,10 +276,7 @@ rtk go test ./internal/graph/ -v -count=1
 # Planner only
 rtk go test ./internal/planner/ -v -count=1
 
-# Validator only
-rtk go test ./internal/validator/ -v -count=1
-
-# Exporter only
+# Exporters only
 rtk go test ./internal/exporter/ -v -count=1
 
 # CLI
@@ -302,8 +302,8 @@ rtk go test ./internal/planner/ -run "Cycle" -v -count=1
 ### Run without CGO (fast, for non-parser work)
 
 ```bash
-# Types, utilities, CLI, graph, planner, generator, validator, exporter
-rtk go test ./internal/schema/ ./internal/graph/ ./internal/planner/ ./internal/generator/ ./internal/validator/ ./internal/exporter/ ./internal/semantic/ -v -count=1
+# Types, utilities, CLI, graph, planner, generator, exporter, semantic
+rtk go test ./internal/schema/ ./internal/graph/ ./internal/planner/ ./internal/generator/ ./internal/exporter/ ./internal/semantic/ -v -count=1
 ```
 
 ### Coverage report
@@ -360,6 +360,8 @@ rtk ./synthgraph.exe generate -i testdata/schemas/ecommerce.sql -r 100
 | `--rows` | `-r` | No | `10` | Rows per table |
 | `--seed` | `-s` | No | `42` | Random seed for determinism |
 | `--schema-name` | — | No | `""` | Schema name for SQL output |
+| `--config` | `-c` | No | — | Path to YAML config file |
+| `--init-config` | — | No | — | Write a default YAML config file and exit |
 
 ### `synthgraph inspect`
 
@@ -435,14 +437,69 @@ rtk go run ./cmd/synthgraph/ version
 
 ---
 
-## Running the Schema Visualizer
+## Running the Web Application
 
-The `serveviz` command starts an HTTP server that serves:
-- A Cytoscape.js interactive schema graph at `/`
-- The graph JSON data at `/api/graph`
+The `synthgraph-web` command starts an HTTP server with a full pipeline UI (REST API + embedded SPA). It reuses the same `internal/` packages as the CLI.
+
+### Starting the server
 
 ```bash
-# Start the visualizer with a schema file
+# Start the web app (default port 8080)
+rtk CGO_ENABLED=1 go run ./cmd/synthgraph-web/
+
+# Custom port
+rtk CGO_ENABLED=1 go run ./cmd/synthgraph-web/ --port 9090
+
+# Using the compiled binary
+rtk CGO_ENABLED=1 go build -o synthgraph-web.exe ./cmd/synthgraph-web/
+rtk ./synthgraph-web.exe
+```
+
+Then open http://localhost:8080 in your browser.
+
+### Pipeline UI (4 pages)
+
+The SPA walks you through the full SynthGraph pipeline:
+
+| Page | Endpoint | What it does |
+|------|----------|-------------|
+| **Schema** | `POST /api/parse` | Paste or upload SQL DDL, returns parsed model |
+| **Graph** | `POST /api/graph` | Interactive Cytoscape.js graph (fcose layout), shows tables, FK edges, junction highlighting |
+| **Semantic** | `POST /api/semantic` | Table role inference (entity, junction, lookup, transactional, hierarchical) |
+| **Generate** | `POST /api/generate` | Configure rows/seed/format, run generation, download CSV or SQL |
+
+### Job history
+
+Completed generations are listed at `GET /api/jobs` (newest first). Each job stores its config, table count, output format, and any partial errors.
+
+### REST API directly
+
+You can call the API without the UI:
+
+```bash
+# Parse
+curl -X POST http://localhost:8080/api/parse -H 'Content-Type: application/json' -d '{"sql":"CREATE TABLE users (id INT PRIMARY KEY);"}'
+
+# Graph (requires model from parse step)
+curl -X POST http://localhost:8080/api/graph -H 'Content-Type: application/json' -d '{"model":{...}}'
+
+# Generate (accepts raw SQL + generation config)
+curl -X POST http://localhost:8080/api/generate -H 'Content-Type: application/json' -d '{"input":"CREATE TABLE users (id INT PRIMARY KEY);","rows":10,"seed":42,"format":"csv"}'
+```
+
+### Supported output formats
+
+- `csv` — RFC 4180 CSV (one file per table concatenated, with headers)
+- `sql` — `INSERT INTO` statements wrapped in a transaction (`BEGIN/COMMIT`)
+
+---
+
+## Running the Lightweight Graph Visualizer
+
+The older `serveviz` command provides a simpler read-only graph view (no generation UI):
+
+```bash
+# Start with a schema file
 rtk CGO_ENABLED=1 go run ./cmd/serveviz/ --schema testdata/schemas/ecommerce.sql
 
 # Custom port
@@ -498,7 +555,7 @@ Located in `testdata/schemas/`:
 
 4. **Add test schemas** to `testdata/schemas/`.
 
-No changes needed to the graph, planner, generator, validator, or exporter — they consume only `schema.Model`.
+No changes needed to the graph, planner, generator, or exporter — they consume only `schema.Model`.
 
 ---
 
@@ -648,7 +705,7 @@ The CGO adapter uses build tags. Ensure `CGO_ENABLED=1` is set. On platforms whe
 
 ### `No such layout 'fcose' found` in the visualizer
 
-The `serveviz` HTML page loads `cytoscape-fcose` from unpkg. If the CDN URL is wrong or the file isn't the browser bundle, switch the script tag to:
+The web app and `serveviz` HTML pages load `cytoscape-fcose` from unpkg. If the CDN URL is wrong or the file isn't the browser bundle, switch the script tag to:
 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/cytoscape-fcose/dist/cytoscape-fcose.min.js"></script>
