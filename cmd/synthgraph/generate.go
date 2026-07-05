@@ -96,24 +96,67 @@ func runGenerate(args []string) {
 }
 
 func parseGenerateFlags(args []string) (*generateConfig, error) {
-	config := &generateConfig{}
+	// Extract --config and --init-config before full flag parsing.
+	configPath, args := extractConfigFlag(args)
+
+	initConfig := false
+	for _, a := range args {
+		if a == "--init-config" {
+			initConfig = true
+			break
+		}
+	}
+
+	if initConfig {
+		path := "synthgraph.yaml"
+		for i, a := range args {
+			if a == "--init-config" && i+1 < len(args) {
+				path = args[i+1]
+				break
+			}
+			if len(a) > 14 && a[:14] == "--init-config=" {
+				path = a[14:]
+				break
+			}
+		}
+		if err := writeDefaultConfig(path); err != nil {
+			return nil, fmt.Errorf("writing default config: %w", err)
+		}
+		fmt.Printf("wrote default config to %s\n", path)
+		os.Exit(0)
+	}
+
+	config := defaultGenerateConfig()
+
+	// Load config file if specified.
+	if configPath != "" {
+		fileCfg, err := loadConfigFile(configPath)
+		if err != nil {
+			return nil, err
+		}
+		config.applyGenerateFile(fileCfg)
+		if fileCfg.Verbose {
+			config.verbose = true
+		}
+	}
 
 	flags := flag.NewFlagSet("generate", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 
-	flags.StringVar(&config.input, "input", "", "Input SQL schema file (required)")
-	flags.StringVar(&config.input, "i", "", "Input SQL schema file (required)")
-	flags.StringVar(&config.output, "output", "", "Output file (default: stdout)")
-	flags.StringVar(&config.output, "o", "", "Output file (default: stdout)")
-	flags.StringVar(&config.format, "format", "sql", "Output format: sql, csv")
-	flags.StringVar(&config.format, "f", "sql", "Output format: sql, csv")
-	flags.IntVar(&config.rows, "rows", 10, "Number of rows per table")
-	flags.IntVar(&config.rows, "r", 10, "Number of rows per table")
-	flags.Int64Var(&config.seed, "seed", 42, "Global random seed for determinism")
-	flags.Int64Var(&config.seed, "s", 42, "Global random seed for determinism")
-	flags.StringVar(&config.schemaName, "schema-name", "", "Schema name for SQL output (optional)")
-	flags.BoolVar(&config.verbose, "v", false, "Enable verbose logging")
-	flags.BoolVar(&config.verbose, "verbose", false, "Enable verbose logging")
+	flags.StringVar(&config.input, "input", config.input, "Input SQL schema file (required)")
+	flags.StringVar(&config.input, "i", config.input, "Input SQL schema file (required)")
+	flags.StringVar(&config.output, "output", config.output, "Output file (default: stdout)")
+	flags.StringVar(&config.output, "o", config.output, "Output file (default: stdout)")
+	flags.StringVar(&config.format, "format", config.format, "Output format: sql, csv")
+	flags.StringVar(&config.format, "f", config.format, "Output format: sql, csv")
+	flags.IntVar(&config.rows, "rows", config.rows, "Number of rows per table")
+	flags.IntVar(&config.rows, "r", config.rows, "Number of rows per table")
+	flags.Int64Var(&config.seed, "seed", config.seed, "Global random seed for determinism")
+	flags.Int64Var(&config.seed, "s", config.seed, "Global random seed for determinism")
+	flags.StringVar(&config.schemaName, "schema-name", config.schemaName, "Schema name for SQL output (optional)")
+	flags.BoolVar(&config.verbose, "v", config.verbose, "Enable verbose logging")
+	flags.BoolVar(&config.verbose, "verbose", config.verbose, "Enable verbose logging")
+	flags.StringVar(&configPath, "config", configPath, "Path to YAML config file")
 
 	if err := flags.Parse(args); err != nil {
 		return nil, err
@@ -201,5 +244,38 @@ func exportData(config *generateConfig, dataset *generator.Dataset, model *schem
 		return exporter.ExportCSV(writer, dataset, model, exportCfg)
 	default:
 		return fmt.Errorf("unsupported format: %s", config.format)
+	}
+}
+
+func defaultGenerateConfig() *generateConfig {
+	return &generateConfig{
+		format: "sql",
+		rows:   10,
+		seed:   42,
+	}
+}
+
+func (c *generateConfig) applyGenerateFile(fc *ConfigFile) {
+	if fc.Generate == nil {
+		return
+	}
+	g := fc.Generate
+	if g.Input != "" {
+		c.input = g.Input
+	}
+	if g.Output != "" {
+		c.output = g.Output
+	}
+	if g.Format != "" {
+		c.format = g.Format
+	}
+	if g.Rows != nil {
+		c.rows = *g.Rows
+	}
+	if g.Seed != nil {
+		c.seed = *g.Seed
+	}
+	if g.SchemaName != "" {
+		c.schemaName = g.SchemaName
 	}
 }
