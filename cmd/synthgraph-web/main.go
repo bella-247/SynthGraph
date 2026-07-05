@@ -1,27 +1,39 @@
 package main
 
 import (
+	_ "embed"
 	"flag"
 	"fmt"
-	"log"
-	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"synthgraph/cmd/synthgraph-web/server"
 )
 
+//go:embed index.html
+var indexHTML string
+
 func main() {
-	port := flag.Int("port", 8080, "HTTP server port")
+	port := flag.Int("port", server.DefaultPort, "HTTP server port")
+	jobPersistPath := flag.String("job-file", "synthgraph-jobs.json", "path to job persistence file (empty for in-memory only)")
 	flag.Parse()
 
-	mux := http.NewServeMux()
-	server := newServer()
+	serverInstance := server.New(indexHTML, *jobPersistPath)
 
-	mux.HandleFunc("GET /api/jobs", server.handleListJobs)
-	mux.HandleFunc("POST /api/parse", server.handleParse)
-	mux.HandleFunc("POST /api/graph", server.handleGraph)
-	mux.HandleFunc("POST /api/semantic", server.handleSemantic)
-	mux.HandleFunc("POST /api/generate", server.handleGenerate)
-	mux.HandleFunc("GET /", server.handleFrontend)
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, syscall.SIGINT, syscall.SIGTERM)
 
-	addr := fmt.Sprintf(":%d", *port)
-	log.Printf("synthgraph-web running at http://localhost%s", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	go func() {
+		<-signalChannel
+		if shutdownError := serverInstance.Shutdown(); shutdownError != nil {
+			fmt.Fprintf(os.Stderr, "shutdown error: %v\n", shutdownError)
+		}
+	}()
+
+	address := fmt.Sprintf(":%d", *port)
+	if listenError := serverInstance.ListenAndServe(address); listenError != nil {
+		fmt.Fprintf(os.Stderr, "server error: %v\n", listenError)
+		os.Exit(1)
+	}
 }

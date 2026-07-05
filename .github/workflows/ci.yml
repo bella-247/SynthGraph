@@ -48,5 +48,14 @@ jobs:
       - name: Test (with race detector)
         run: go test ./... -race -timeout=180s
 
-      - name: Build (sanity check)
+      - name: Build CLI (sanity check)
         run: go build -o ${{ runner.temp }}/synthgraph ./cmd/synthgraph
+
+      - name: Build web app (sanity check)
+        run: go build -o ${{ runner.temp }}/synthgraph-web ./cmd/synthgraph-web
+
+      - name: Test server package (no CGO)
+        run: go test ./cmd/synthgraph-web/server/ -v -count=1
+
+      - name: Build serveviz (sanity check)
+        run: go build -o /dev/null ./cmd/serveviz
