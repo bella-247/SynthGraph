@@ -5,59 +5,114 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+  packages: write
+
+env:
+  CGO_ENABLED: "1"
+
 jobs:
-  release:
-    name: Build & Release
+  test:
+    name: Test
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.26'
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc libc6-dev
+      - run: go test ./... -race -count=1 -timeout=180s
 
-      - name: Run tests
-        run: go test ./... -race -count=1
-
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    needs: [test]
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      - name: Install C cross-compiler
+        if: matrix.arch == 'arm64'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+      - name: Install C compiler (amd64)
+        if: matrix.arch == 'amd64'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc libc6-dev
       - name: Extract version
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-
-      - name: Build Linux (amd64)
+      - name: Build
         run: |
-          GOOS=linux GOARCH=amd64 go build \
-            -ldflags="-X main.version=${{ steps.version.outputs.VERSION }}" \
-            -o dist/synthgraph-linux-amd64 \
-            ./cmd/synthgraph
+          CC=${{ matrix.arch == 'arm64' && 'aarch64-linux-gnu-gcc' || 'gcc' }} \
+          GOOS=linux GOARCH=${{ matrix.arch }} \
+          go build -ldflags="-X main.version=${{ steps.version.outputs.VERSION }}" \
+            -o dist/synthgraph-linux-${{ matrix.arch }} ./cmd/synthgraph
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthgraph-linux-${{ matrix.arch }}
+          path: dist/synthgraph-linux-${{ matrix.arch }}
 
-      - name: Build macOS (amd64)
-        run: |
-          GOOS=darwin GOARCH=amd64 go build \
-            -ldflags="-X main.version=${{ steps.version.outputs.VERSION }}" \
-            -o dist/synthgraph-darwin-amd64 \
-            ./cmd/synthgraph
+  build-docker:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
-      - name: Build macOS (arm64)
-        run: |
-          GOOS=darwin GOARCH=arm64 go build \
-            -ldflags="-X main.version=${{ steps.version.outputs.VERSION }}" \
-            -o dist/synthgraph-darwin-arm64 \
-            ./cmd/synthgraph
-
-      - name: Build Windows (amd64)
-        run: |
-          GOOS=windows GOARCH=amd64 go build \
-            -ldflags="-X main.version=${{ steps.version.outputs.VERSION }}" \
-            -o dist/synthgraph-windows-amd64.exe \
-            ./cmd/synthgraph
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [build-linux, build-docker]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: synthgraph-*
+          merge-multiple: true
+          path: dist
+      - name: Checksum
+        run: cd dist && sha256sum * > checksums.txt
+      - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
           generate_release_notes: true
+          body: |
+            ## Downloads
+
+            - **Linux amd64** — `synthgraph-linux-amd64` (CGO, requires glibc)
+            - **Linux arm64** — `synthgraph-linux-arm64` (CGO, requires glibc)
+            - **Docker** — `ghcr.io/${{ github.repository }}:v...`
+
+            > **Note:** macOS and Windows builds require a C compiler toolchain
+            > for CGO. Build from source with `CGO_ENABLED=1 go build ./cmd/synthgraph`.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

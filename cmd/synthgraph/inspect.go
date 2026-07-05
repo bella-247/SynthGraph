@@ -25,18 +25,23 @@ func runInspect(args []string) {
 		if errors.Is(err, flag.ErrHelp) {
 			return
 		}
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		globalLogger.Error("%v", err)
 		os.Exit(1)
 	}
 
 	if config.input == "" {
-		fmt.Fprintf(os.Stderr, "error: --input is required\n")
+		globalLogger.Error("--input is required")
 		os.Exit(1)
 	}
 
+	if config.verbose {
+		globalLogger = NewLogger(LevelDebug)
+	}
+
+	globalLogger.Debug("inspecting schema: %s", config.input)
 	model, err := parseSQLFile(config.input)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: parsing schema: %v\n", err)
+		globalLogger.Error("parsing schema: %v", err)
 		os.Exit(1)
 	}
 
@@ -49,7 +54,7 @@ func runInspect(args []string) {
 	if showGraph || showSemantic {
 		g, graphError := graph.Build(model)
 		if graphError != nil {
-			fmt.Fprintf(os.Stderr, "error: building graph: %v\n", graphError)
+			globalLogger.Error("building graph: %v", graphError)
 			os.Exit(1)
 		}
 
@@ -60,7 +65,7 @@ func runInspect(args []string) {
 		if showSemantic {
 			sg, semanticError := semantic.Build(g)
 			if semanticError != nil {
-				fmt.Fprintf(os.Stderr, "error: building semantic graph: %v\n", semanticError)
+				globalLogger.Error("building semantic graph: %v", semanticError)
 				os.Exit(1)
 			}
 			printSemanticSummary(sg)
@@ -69,16 +74,31 @@ func runInspect(args []string) {
 }
 
 func parseInspectFlags(args []string) (*inspectConfig, error) {
-	config := &inspectConfig{}
+	configPath, args := extractConfigFlag(args)
+
+	config := defaultInspectConfig()
+
+	if configPath != "" {
+		fileCfg, err := loadConfigFile(configPath)
+		if err != nil {
+			return nil, err
+		}
+		config.applyInspectFile(fileCfg)
+		if fileCfg.Verbose {
+			config.verbose = true
+		}
+	}
 
 	flags := flag.NewFlagSet("inspect", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
 
-	flags.StringVar(&config.input, "input", "", "Input SQL schema file (required)")
-	flags.StringVar(&config.input, "i", "", "Input SQL schema file (required)")
-	flags.BoolVar(&config.graph, "graph", false, "Show graph structure summary")
-	flags.BoolVar(&config.semantic, "semantic", false, "Show semantic inference summary")
-	flags.BoolVar(&config.verbose, "v", false, "Verbose output (equivalent to --graph --semantic)")
+	flags.StringVar(&config.input, "input", config.input, "Input SQL schema file (required)")
+	flags.StringVar(&config.input, "i", config.input, "Input SQL schema file (required)")
+	flags.BoolVar(&config.graph, "graph", config.graph, "Show graph structure summary")
+	flags.BoolVar(&config.semantic, "semantic", config.semantic, "Show semantic inference summary")
+	flags.BoolVar(&config.verbose, "v", config.verbose, "Verbose: enable debug logging and show all summaries")
+	flags.BoolVar(&config.verbose, "verbose", config.verbose, "Verbose: enable debug logging and show all summaries")
+	flags.StringVar(&configPath, "config", configPath, "Path to YAML config file")
 
 	if err := flags.Parse(args); err != nil {
 		return nil, err
@@ -220,5 +240,25 @@ func printSemanticSummary(sg *semantic.SemanticGraph) {
 			fmt.Printf("  %s -> %s: %s\n", rel.From, rel.To, rel.Kind)
 		}
 		fmt.Println()
+	}
+}
+
+func defaultInspectConfig() *inspectConfig {
+	return &inspectConfig{}
+}
+
+func (c *inspectConfig) applyInspectFile(fc *ConfigFile) {
+	if fc.Inspect == nil {
+		return
+	}
+	ic := fc.Inspect
+	if ic.Input != "" {
+		c.input = ic.Input
+	}
+	if ic.Graph != nil {
+		c.graph = *ic.Graph
+	}
+	if ic.Semantic != nil {
+		c.semantic = *ic.Semantic
 	}
 }

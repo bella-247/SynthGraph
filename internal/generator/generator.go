@@ -37,6 +37,7 @@
 package generator
 
 import (
+	"context"
 	"fmt"
 	"math/rand/v2"
 
@@ -46,13 +47,6 @@ import (
 )
 
 // ── Output types ──────────────────────────────────────────────────────────
-
-// Dataset is the complete output of the generator. It contains all generated
-// rows for every table in the schema.
-type Dataset struct {
-	// Tables maps table name → generated rows, preserving generation order.
-	Tables []*GeneratedTable
-}
 
 // GeneratedTable holds all generated rows for a single table.
 type GeneratedTable struct {
@@ -71,6 +65,11 @@ type GeneratedRow map[string]any
 // GenerationContext carries all configuration and reference data needed by the
 // generator. It is constructed once and shared across all table generators.
 type GenerationContext struct {
+	// Context controls cancellation. When cancelled, the generator stops after
+	// the current table and returns partial results. If nil, no cancellation
+	// is performed (backward compatible default).
+	Context context.Context
+
 	// GlobalSeed is the master seed for the entire generation run.
 	// Every table derives its own deterministic seed from this value.
 	GlobalSeed uint64
@@ -83,6 +82,23 @@ type GenerationContext struct {
 
 	// SemanticGraph carries inferred roles, relationships, and patterns.
 	SemanticGraph *semantic.SemanticGraph
+}
+
+// PartialError records a generation failure for a single table when the
+// generator is configured to continue on error.
+type PartialError struct {
+	// Table is the table that failed to generate.
+	Table string
+
+	// Err is the underlying error.
+	Err error
+}
+
+// Dataset is the complete output of the generator. It contains all generated
+// rows for every table in the schema.
+type Dataset struct {
+	Tables []*GeneratedTable
+	Errors []PartialError
 }
 
 // GenError describes a generation failure.
