@@ -40,9 +40,28 @@ func runGenerate(args []string) {
 		os.Exit(1)
 	}
 
-	dataset, model, err := generateData(config)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: generation failed: %v\n", err)
+	model, parseErr := parseSQLFile(config.input)
+	if parseErr != nil {
+		fmt.Fprintf(os.Stderr, "error: parsing schema: %v\n", parseErr)
+		os.Exit(1)
+	}
+
+	if validationErrors := schema.Validate(model); len(validationErrors) > 0 {
+		fmt.Fprintf(os.Stderr, "error: schema validation failed:\n")
+		for _, ve := range validationErrors {
+			fmt.Fprintf(os.Stderr, "  - %v\n", ve)
+		}
+		os.Exit(1)
+	}
+
+	dataset, genErr := generateData(model, config)
+	if genErr != nil {
+		fmt.Fprintf(os.Stderr, "error: generation failed: %v\n", genErr)
+		os.Exit(1)
+	}
+
+	if len(dataset.Tables) == 0 {
+		fmt.Fprintf(os.Stderr, "error: no tables were generated\n")
 		os.Exit(1)
 	}
 
@@ -108,25 +127,20 @@ func (c *generateConfig) validate() error {
 	return nil
 }
 
-func generateData(config *generateConfig) (*generator.Dataset, *schema.Model, error) {
-	model, err := parseSQLFile(config.input)
-	if err != nil {
-		return nil, nil, fmt.Errorf("parsing schema: %w", err)
-	}
-
+func generateData(model *schema.Model, config *generateConfig) (*generator.Dataset, error) {
 	g, err := graph.Build(model)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building graph: %w", err)
+		return nil, fmt.Errorf("building graph: %w", err)
 	}
 
 	sg, err := semantic.Build(g)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building semantic graph: %w", err)
+		return nil, fmt.Errorf("building semantic graph: %w", err)
 	}
 
 	plan, err := planner.BuildPlan(g, model, config.rows)
 	if err != nil {
-		return nil, nil, fmt.Errorf("building generation plan: %w", err)
+		return nil, fmt.Errorf("building generation plan: %w", err)
 	}
 
 	ctx := &generator.GenerationContext{
@@ -138,10 +152,10 @@ func generateData(config *generateConfig) (*generator.Dataset, *schema.Model, er
 
 	dataset, err := generator.Generate(plan, ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("generating data: %w", err)
+		return nil, fmt.Errorf("generating data: %w", err)
 	}
 
-	return dataset, model, nil
+	return dataset, nil
 }
 
 func exportData(config *generateConfig, dataset *generator.Dataset, model *schema.Model) error {
