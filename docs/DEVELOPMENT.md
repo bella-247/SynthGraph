@@ -69,9 +69,18 @@ synthgraph/
  │   │   ├── inspect.go        # "synthgraph inspect" — schema analysis
  │   │   └── version.go        # "synthgraph version" — version info
  │   ├── synthgraph-web/
- │   │   ├── main.go            # HTTP server + route registration
- │   │   ├── server.go          # REST API handlers (parse, graph, semantic, generate, jobs)
- │   │   └── index.html         # Embedded SPA (Cytoscape.js graph viz, 4-page pipeline UI)
+ │   │   ├── main.go             # Entry point: embed, flags, signal handling, server start
+ │   │   ├── index.html          # Embedded SPA (Cytoscape.js graph viz, 4-page pipeline UI)
+ │   │   └── server/
+ │   │       ├── server.go       # Server struct, constructor, route registration, graceful shutdown
+ │   │       ├── types.go        # Request/response types (parseRequest, graphResponse, etc.)
+ │   │       ├── middleware.go   # Logging, panic recovery, CORS, body size limit
+ │   │       ├── job_store.go    # In-memory job store with optional file persistence
+ │   │       ├── helpers.go      # writeJSON, writeError helpers
+ │   │       ├── handlers_frontend.go  # Frontend + health + parse handlers
+ │   │       ├── handlers_graph.go     # Graph + semantic handlers
+ │   │       ├── handlers_generate.go  # Generation pipeline + job listing handlers
+ │   │       └── server_test.go        # 14 unit tests for handlers, middleware, job store
  │   └── serveviz/
  │       ├── main.go            # Lightweight read-only graph visualizer
  │       └── index.html         # Embedded HTML (Cytoscape.js)
@@ -444,16 +453,29 @@ The `synthgraph-web` command starts an HTTP server with a full pipeline UI (REST
 ### Starting the server
 
 ```bash
-# Start the web app (default port 8080)
+# Start the web app (default port 8080, in-memory job storage)
 rtk CGO_ENABLED=1 go run ./cmd/synthgraph-web/
 
 # Custom port
 rtk CGO_ENABLED=1 go run ./cmd/synthgraph-web/ --port 9090
 
+# With job persistence (jobs survive restarts)
+rtk CGO_ENABLED=1 go run ./cmd/synthgraph-web/ --job-file jobs.json
+
+# Disable job persistence (in-memory only)
+rtk CGO_ENABLED=1 go run ./cmd/synthgraph-web/ --job-file ""
+
 # Using the compiled binary
 rtk CGO_ENABLED=1 go build -o synthgraph-web.exe ./cmd/synthgraph-web/
 rtk ./synthgraph-web.exe
 ```
+
+**Flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--port` | `8080` | HTTP server port |
+| `--job-file` | `synthgraph-jobs.json` | Path to job persistence file (empty string = in-memory-only) |
 
 Then open http://localhost:8080 in your browser.
 

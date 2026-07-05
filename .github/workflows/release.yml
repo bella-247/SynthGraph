@@ -25,8 +25,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gcc libc6-dev
       - run: go test ./... -race -count=1 -timeout=180s
 
-  build-linux:
-    name: Build Linux
+  build-linux-cli:
+    name: Build CLI (Linux)
     runs-on: ubuntu-latest
     needs: [test]
     strategy:
@@ -46,16 +46,26 @@ jobs:
       - name: Extract version
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-      - name: Build
+      - name: Build CLI
         run: |
           CC=${{ matrix.arch == 'arm64' && 'aarch64-linux-gnu-gcc' || 'gcc' }} \
           GOOS=linux GOARCH=${{ matrix.arch }} \
           go build -ldflags="-X main.version=${{ steps.version.outputs.VERSION }}" \
             -o dist/synthgraph-linux-${{ matrix.arch }} ./cmd/synthgraph
+      - name: Build Web App
+        run: |
+          CC=${{ matrix.arch == 'arm64' && 'aarch64-linux-gnu-gcc' || 'gcc' }} \
+          GOOS=linux GOARCH=${{ matrix.arch }} \
+          go build -ldflags="-X main.version=${{ steps.version.outputs.VERSION }}" \
+            -o dist/synthgraph-web-linux-${{ matrix.arch }} ./cmd/synthgraph-web
       - uses: actions/upload-artifact@v4
         with:
           name: synthgraph-linux-${{ matrix.arch }}
           path: dist/synthgraph-linux-${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthgraph-web-linux-${{ matrix.arch }}
+          path: dist/synthgraph-web-linux-${{ matrix.arch }}
 
   build-docker:
     name: Build Docker image
@@ -91,7 +101,7 @@ jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [build-linux, build-docker]
+    needs: [build-linux-cli, build-docker]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -108,9 +118,17 @@ jobs:
           body: |
             ## Downloads
 
-            - **Linux amd64** — `synthgraph-linux-amd64` (CGO, requires glibc)
-            - **Linux arm64** — `synthgraph-linux-arm64` (CGO, requires glibc)
-            - **Docker** — `ghcr.io/${{ github.repository }}:v...`
+            **CLI:**
+            - **Linux amd64** — `synthgraph-linux-amd64`
+            - **Linux arm64** — `synthgraph-linux-arm64`
+
+            **Web App:**
+            - **Linux amd64** — `synthgraph-web-linux-amd64`
+            - **Linux arm64** — `synthgraph-web-linux-arm64`
+
+            **Docker:**
+            - `ghcr.io/${{ github.repository }}:v...` (default tag runs the CLI)
+            - Build the `web` stage: `docker build --target web -t synthgraph-web .`
 
             > **Note:** macOS and Windows builds require a C compiler toolchain
             > for CGO. Build from source with `CGO_ENABLED=1 go build ./cmd/synthgraph`.
