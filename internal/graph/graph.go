@@ -53,3 +53,12 @@ func (graph *Graph) HasNode(nodeID string) bool {
 	_, exists := graph.Nodes[nodeID]
 	return exists
 }
+
+// StringSet converts a string slice to a set map for O(1) lookups.
+func StringSet(values []string) map[string]bool {
+	set := make(map[string]bool, len(values))
+	for _, value := range values {
+		set[value] = true
+	}
+	return set
+}
