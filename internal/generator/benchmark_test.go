@@ -79,6 +79,7 @@ func BenchmarkGenerate_FullPipeline(b *testing.B) {
 			if err != nil {
 				b.Fatalf("graph.Build: %v", err)
 			}
+			semantic.ResolveColumns(model)
 			sg, err := semantic.Build(g)
 			if err != nil {
 				b.Fatalf("semantic.Build: %v", err)
@@ -147,6 +148,7 @@ func BenchmarkGenerate_WideTable(b *testing.B) {
 	for _, count := range columnCounts {
 		model := makeWideSchema(count)
 		g, _ := graph.Build(model)
+		semantic.ResolveColumns(model)
 		sg, _ := semantic.Build(g)
 		plan, _ := planner.BuildPlan(g, model, 100)
 		ctx := &GenerationContext{GlobalSeed: 42, Model: model, Graph: g, SemanticGraph: sg}

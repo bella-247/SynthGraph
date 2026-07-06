@@ -8,29 +8,53 @@ import (
 	"synthgraph/internal/schema"
 )
 
+// serialGenerator generates sequential integer values (1, 2, 3, ...).
+type serialGenerator struct {
+	start int64
+}
+
+func (g serialGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
+	return g.start + int64(rowIndex), nil
+}
+
 // intGenerator generates random integer values.
 type intGenerator struct {
 	min int64
 	max int64
 }
 
-func (generator intGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
-	if generator.max <= generator.min {
-		return generator.min, nil
+func (g intGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
+	if g.max <= g.min {
+		return g.min, nil
 	}
-	rangeSize := generator.max - generator.min + 1
+	rangeSize := g.max - g.min + 1
 	if rangeSize > math.MaxInt64 {
-		value := generator.min + int64(rng.Uint64()%uint64(rangeSize))
+		value := g.min + int64(rng.Uint64()%uint64(rangeSize))
 		return value, nil
 	}
-	value := generator.min + rng.Int64N(rangeSize)
+	value := g.min + rng.Int64N(rangeSize)
 	return value, nil
 }
 
-// stringGenerator generates random string values.
+// uuidGenerator generates random UUID v4 strings.
+type uuidGenerator struct{}
+
+func (uuidGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
+	return generateUUID(rng), nil
+}
+
+// boolGenerator generates random boolean values.
+type boolGenerator struct{}
+
+func (boolGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
+	return rng.IntN(2) == 0, nil
+}
+
+// stringGenerator generates random alphanumeric strings.
+// Semantic-aware generation (names, emails, etc.) is handled by semantic.go.
 type stringGenerator struct{}
 
-func (generator stringGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
+func (stringGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
 	maxLen := column.Length
 	if maxLen <= 0 {
 		maxLen = 50
@@ -40,20 +64,6 @@ func (generator stringGenerator) Generate(column *schema.Column, rowIndex int, r
 		length = 1
 	}
 	return randomString(length, rng), nil
-}
-
-// uuidGenerator generates random UUID v4 strings.
-type uuidGenerator struct{}
-
-func (generator uuidGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
-	return generateUUID(rng), nil
-}
-
-// boolGenerator generates random boolean values.
-type boolGenerator struct{}
-
-func (generator boolGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
-	return rng.IntN(2) == 0, nil
 }
 
 // ── Enum and unknown generators ───────────────────────────────────────────

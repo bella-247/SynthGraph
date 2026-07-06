@@ -44,6 +44,16 @@ func generateUUID(rng *rand.Rand) string {
 	)
 }
 
+// randomString generates a random alphanumeric string of the given length.
+func randomString(length int, rng *rand.Rand) string {
+	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	result := make([]byte, length)
+	for i := 0; i < length; i++ {
+		result[i] = chars[rng.IntN(len(chars))]
+	}
+	return string(result)
+}
+
 // buildEnumValues builds a map from enum type name to its list of values.
 func buildEnumValues(model *schema.Model) map[string][]string {
 	values := make(map[string][]string, len(model.Enums))

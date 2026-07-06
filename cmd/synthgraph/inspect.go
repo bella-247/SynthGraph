@@ -58,6 +58,10 @@ func runInspect(args []string) {
 			os.Exit(1)
 		}
 
+		if showSemantic {
+			semantic.ResolveColumns(model)
+		}
+
 		if showGraph {
 			printGraphSummary(g)
 		}

@@ -22,9 +22,10 @@ var builtInGenerators = map[string]TypeGenerator{
 	"int8":     intGenerator{min: 1, max: 9223372036854775807},
 	"bigint":   intGenerator{min: 1, max: 9223372036854775807},
 	"smallint": intGenerator{min: 1, max: 32767},
-	"serial":   intGenerator{min: 1, max: 2147483647},
-	"bigserial":   intGenerator{min: 1, max: 9223372036854775807},
-	"smallserial": intGenerator{min: 1, max: 32767},
+
+	"serial":       serialGenerator{start: 1},
+	"bigserial":    serialGenerator{start: 1},
+	"smallserial":  serialGenerator{start: 1},
 
 	"varchar":  stringGenerator{},
 	"text":     stringGenerator{},

@@ -34,9 +34,19 @@ func backfillDeferredFKs(
 			}
 		}
 
+		isSelfRef := dfk.Table == dfk.References
+
 		for rowIndex := range table.Rows {
 			if table.Rows[rowIndex][dfk.Column] == nil {
-				table.Rows[rowIndex][dfk.Column] = refPKs[tableRNG.IntN(len(refPKs))]
+				if isSelfRef && rowIndex == 0 {
+					continue
+				}
+				if isSelfRef {
+					parentIdx := tableRNG.IntN(rowIndex)
+					table.Rows[rowIndex][dfk.Column] = refPKs[parentIdx]
+				} else {
+					table.Rows[rowIndex][dfk.Column] = refPKs[tableRNG.IntN(len(refPKs))]
+				}
 			}
 		}
 	}

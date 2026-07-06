@@ -35,5 +35,11 @@ graphify-out/
 
 # Project-specific
 .agents/
+.serena/
 CLAUDE.md
 .claude/
+
+# Generated runtime files
+synthgraph-jobs.json
+synthgraph-web.exe
+synthgraph.exe

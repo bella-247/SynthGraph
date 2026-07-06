@@ -76,7 +76,10 @@ Understand your schema's dependency graph before generating anything.
 ### Installation
 
 ```bash
-# Build from source (requires Go 1.21+, GCC for CGO)
+# Install globally via go install (recommended — puts synthgraph in $GOPATH/bin)
+CGO_ENABLED=1 go install ./cmd/synthgraph@latest
+
+# Or build from source
 CGO_ENABLED=1 go build -o synthgraph ./cmd/synthgraph/
 
 # Or run directly
@@ -95,11 +98,25 @@ synthgraph generate --input schema.sql --rows 100 --output seed.sql
 synthgraph inspect --input schema.sql --graph --semantic
 ```
 
-### Visualize (development UI)
+### Visualize (web application)
+
+```bash
+# Start the SynthGraph web UI (REST API + embedded SPA)
+CGO_ENABLED=1 go run ./cmd/synthgraph-web/
+# Open http://localhost:8080
+```
+
+The web app walks you through the full pipeline:
+1. **Schema** — paste or upload your SQL DDL
+2. **Graph** — explore your schema as an interactive graph (Cytoscape.js)
+3. **Semantic** — see inferred table roles (entity, junction, lookup, transactional)
+4. **Generate** — configure row count, seed, format, then run
+5. **Download** — get CSV or SQL output
+
+For a lighter development-only visualizer:
 
 ```bash
 CGO_ENABLED=1 go run ./cmd/serveviz/ --schema schema.sql
-# Open http://localhost:8080
 ```
 
 ```
@@ -256,13 +273,22 @@ Flags:
 synthgraph version
 ```
 
-### `serveviz` (development tool)
+### `synthgraph-web` (web application)
+
+```
+go run ./cmd/synthgraph-web/ [--port 8080]
+
+Starts the SynthGraph web application with a REST API and embedded SPA.
+Open http://localhost:8080 for an interactive pipeline UI (schema → graph → semantic → generate → download).
+```
+
+### `serveviz` (development-only visualizer)
 
 ```
 go run ./cmd/serveviz/ --schema <path> [--port 8080]
 
-Starts an HTTP server with an interactive Cytoscape.js graph visualizer.
-Open http://localhost:8080 in your browser.
+Lightweight read-only graph visualizer. No generation UI.
+Go to http://localhost:8080 in your browser.
 ```
 
 ---
@@ -305,19 +331,13 @@ SQL File
   Dataset
     │
     ▼
-  Post-generation Validator
-    │
-    ▼
-  ValidatedDataset
-    │
-    ▼
   Exporter
     │
     ▼
   SQL INSERT / CSV
 ```
 
-Every parser produces the same `schema.Model`. The graph engine, planner, generator, validator, and exporter never know what format the schema came from.
+Every parser produces the same `schema.Model`. The graph engine, planner, generator, and exporter never know what format the schema came from.
 
 Full architecture documentation: [docs/architecture.md](docs/architecture.md)
 
@@ -354,10 +374,11 @@ Full roadmap: [ROADMAP.md](ROADMAP.md)
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the complete development guide covering:
 
 - **Prerequisites** — Go, GCC, MinGW-w64 setup
-- **Building** — with and without CGO
-- **Testing** — all tests, specific packages, specific tests
+- **Building** — CLI, web app, with and without CGO
+- **Testing** — all packages, specific packages, specific tests
 - **Running the CLI** — every flag for `generate`, `inspect`, `version`
-- **Schema Visualizer** — running and using the Cytoscape.js UI
+- **Running the Web App** — start and use the SPA pipeline UI
+- **Schema Visualizer** — older lightweight development visualizer
 - **Extending** — adding parser dialects, inference rules, type generators
 - **Debugging** — tips and common issues
 
