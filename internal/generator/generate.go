@@ -40,8 +40,10 @@ func Generate(plan *planner.GenerationPlan, ctx *GenerationContext) (*Dataset, e
 		Tables: make([]*GeneratedTable, 0, len(plan.Order)),
 	}
 
+	totalTables := len(plan.Order)
+
 	// Phase 1: Generate each table in planner order.
-	for _, tablePlan := range plan.Order {
+	for tableIndex, tablePlan := range plan.Order {
 		if isCancelled(ctx.Context) {
 			return dataset, ErrCancelled
 		}
@@ -59,6 +61,11 @@ func Generate(plan *planner.GenerationPlan, ctx *GenerationContext) (*Dataset, e
 		// Collect PK values for FK resolution by downstream tables.
 		pkValues := extractPKValues(generatedTable, tablePlan.Table)
 		tablePKs[tablePlan.TableName] = pkValues
+
+		// Report progress if a callback is registered.
+		if ctx.Progress != nil {
+			ctx.Progress(tablePlan.TableName, tableIndex+1, totalTables)
+		}
 	}
 
 	// Phase 2: Backfill deferred FK columns.

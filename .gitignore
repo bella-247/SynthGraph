@@ -35,5 +35,6 @@ graphify-out/
 
 # Project-specific
 .agents/
+.serena/
 CLAUDE.md
 .claude/

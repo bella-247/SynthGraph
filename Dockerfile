@@ -7,11 +7,17 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=1 go build -ldflags="-s -w" -o /synthgraph ./cmd/synthgraph
+RUN CGO_ENABLED=1 go build -ldflags="-s -w" -o /synthgraph-web ./cmd/synthgraph-web
 
-FROM alpine:3.21
+FROM alpine:3.21 AS cli
 
 RUN apk add --no-cache ca-certificates tzdata libc6-compat
-
 COPY --from=builder /synthgraph /usr/local/bin/synthgraph
-
 ENTRYPOINT ["synthgraph"]
+
+FROM alpine:3.21 AS web
+
+RUN apk add --no-cache ca-certificates tzdata libc6-compat
+COPY --from=builder /synthgraph-web /usr/local/bin/synthgraph-web
+EXPOSE 8080
+ENTRYPOINT ["synthgraph-web"]

@@ -1,0 +1,1319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SynthGraph</title>
+<script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"></script>
+<script src="https://unpkg.com/cytoscape-fcose/cytoscape-fcose.js"></script>
+<style>
+:root {
+  --bg: #0b0e14;
+  --bg2: #11161e;
+  --bg3: #1a212c;
+  --bg4: #232d3b;
+  --border: #2a3442;
+  --border-light: #364252;
+  --text: #dfe6f0;
+  --text2: #9aa8be;
+  --text3: #6b7d96;
+  --accent: #4c9aff;
+  --accent-hover: #6baeff;
+  --green: #3ecf8e;
+  --green-bg: rgba(62,207,142,0.12);
+  --red: #f0506a;
+  --red-bg: rgba(240,80,106,0.12);
+  --yellow: #e5b83c;
+  --yellow-bg: rgba(229,184,60,0.12);
+  --orange: #d4761a;
+  --orange-bg: rgba(212,118,26,0.12);
+  --purple: #a78bfa;
+  --breakpoint-sm: 640px;
+  --radius: 8px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.4);
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size:14px;
+  line-height:1.5;
+  min-height:100vh;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+button{
+  cursor:pointer;
+  font-family:inherit;
+  font-size:13px;
+  padding:7px 16px;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  background:var(--bg3);
+  color:var(--text);
+  transition:all 0.15s ease;
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  user-select:none;
+}
+button:hover{background:var(--bg4);border-color:var(--border-light)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:0.4;cursor:not-allowed;background:var(--bg3);border-color:var(--border)}
+button.primary{
+  background:linear-gradient(135deg,var(--accent),#3b82f6);
+  color:#fff;
+  border-color:var(--accent);
+  font-weight:500;
+  box-shadow:0 1px 3px rgba(76,154,255,0.2);
+}
+button.primary:hover{background:linear-gradient(135deg,var(--accent-hover),#4c8bf5);border-color:var(--accent-hover)}
+button.primary:disabled{background:var(--bg3);color:var(--text2);border-color:var(--border);box-shadow:none}
+button.danger{background:var(--red);color:#fff;border-color:var(--red)}
+button.danger:hover{filter:brightness(1.15)}
+button.ghost{background:transparent;border-color:transparent;color:var(--text2)}
+button.ghost:hover{background:var(--bg3);border-color:var(--border);color:var(--text)}
+button.small{padding:4px 10px;font-size:12px}
+button.icon{padding:4px 8px;font-size:16px;line-height:1}
+select,textarea,input[type="text"],input[type="number"],input[type="url"]{
+  font-family:inherit;
+  font-size:13px;
+  padding:7px 10px;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  background:var(--bg2);
+  color:var(--text);
+  transition:border-color 0.15s,box-shadow 0.15s;
+  width:100%;
+}
+select:focus,textarea:focus,input:focus{
+  outline:none;
+  border-color:var(--accent);
+  box-shadow:0 0 0 3px rgba(76,154,255,0.12);
+}
+textarea{resize:vertical;font-family:"Cascadia Code","Fira Code","JetBrains Mono",monospace;line-height:1.45}
+code{font-family:"Cascadia Code","Fira Code","JetBrains Mono",monospace;font-size:12px;background:var(--bg3);padding:1px 5px;border-radius:3px}
+::selection{background:rgba(76,154,255,0.3)}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+::-webkit-scrollbar-thumb:hover{background:var(--border-light)}
+
+/* Header */
+.header{
+  display:flex;
+  align-items:center;
+  gap:20px;
+  padding:0 24px;
+  height:52px;
+  border-bottom:1px solid var(--border);
+  background:var(--bg2);
+  position:sticky;
+  top:0;
+  z-index:50;
+  -webkit-backdrop-filter:blur(12px);
+  backdrop-filter:blur(12px);
+  background:rgba(17,22,30,0.92);
+}
+.logo{
+  font-weight:700;
+  font-size:15px;
+  color:#fff;
+  letter-spacing:-0.3px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  white-space:nowrap;
+}
+.logo-icon{width:22px;height:22px;background:linear-gradient(135deg,var(--accent),#7c3aed);border-radius:5px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;color:#fff;font-weight:700}
+.header nav{display:flex;gap:2px;flex-wrap:wrap}
+.header nav a{
+  padding:6px 14px;
+  border-radius:var(--radius-sm);
+  color:var(--text2);
+  font-size:13px;
+  font-weight:450;
+  cursor:pointer;
+  transition:all 0.15s;
+  text-decoration:none;
+  white-space:nowrap;
+}
+.header nav a:hover{color:var(--text);background:var(--bg3)}
+.header nav a.active{color:#fff;background:var(--bg4)}
+.header-version{
+  margin-left:auto;
+  font-size:11px;
+  color:var(--text3);
+  white-space:nowrap;
+}
+
+/* Main */
+.main{padding:28px 24px;max-width:1200px;margin:0 auto}
+.page{display:none;animation:fadeIn 0.2s ease}
+.page.active{display:block}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+/* Card */
+.card{
+  background:var(--bg2);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:24px;
+  margin-bottom:20px;
+  box-shadow:var(--shadow);
+}
+.card-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:16px;
+  gap:12px;
+  flex-wrap:wrap;
+}
+.card-header h2{
+  font-size:16px;
+  font-weight:600;
+  color:var(--text);
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.card-header h2 .badge{
+  font-size:11px;
+  font-weight:500;
+  padding:1px 8px;
+  border-radius:10px;
+  background:var(--bg3);
+  color:var(--text2);
+}
+.card-desc{font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.5}
+
+/* Form */
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:12px;font-weight:500;color:var(--text2);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.3px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-hint{font-size:11px;color:var(--text3);margin-top:2px}
+.form-group .field-error{font-size:11px;color:var(--red);margin-top:3px;display:none;align-items:center;gap:4px}
+.form-group.invalid input,.form-group.invalid select,.form-group.invalid textarea{border-color:var(--red);box-shadow:0 0 0 3px rgba(240,80,106,0.1)}
+.form-group.invalid .field-error{display:flex}
+.form-actions{display:flex;gap:8px;align-items:center;margin-top:16px;flex-wrap:wrap}
+
+/* Table */
+.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-sm)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+table th,table td{padding:9px 12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle}
+table th{
+  color:var(--text2);
+  font-weight:500;
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:0.5px;
+  background:var(--bg3);
+  white-space:nowrap;
+}
+table tr:last-child td{border-bottom:none}
+table tr:hover td{background:rgba(255,255,255,0.02)}
+
+/* Badge */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;white-space:nowrap}
+.badge-green{background:var(--green-bg);color:var(--green)}
+.badge-red{background:var(--red-bg);color:var(--red)}
+.badge-yellow{background:var(--yellow-bg);color:var(--yellow)}
+.badge-orange{background:var(--orange-bg);color:var(--orange)}
+.badge-blue{background:rgba(76,154,255,0.12);color:var(--accent)}
+.badge-gray{background:rgba(154,168,190,0.1);color:var(--text2)}
+
+/* Graph */
+#cy{width:100%;height:560px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg)}
+.graph-legend{
+  display:flex;
+  gap:16px;
+  margin-top:12px;
+  flex-wrap:wrap;
+  padding:12px 16px;
+  background:var(--bg3);
+  border-radius:var(--radius-sm);
+  border:1px solid var(--border);
+}
+.legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2)}
+.legend-dot{width:12px;height:12px;border-radius:50%;border:1px solid var(--border);flex-shrink:0}
+.graph-actions{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+
+/* Panel */
+.panel{
+  position:fixed;
+  top:0;
+  right:-440px;
+  width:420px;
+  height:100%;
+  z-index:100;
+  background:var(--bg2);
+  border-left:1px solid var(--border);
+  padding:24px 20px;
+  overflow-y:auto;
+  transition:right 0.25s cubic-bezier(0.4,0,0.2,1);
+  box-shadow:var(--shadow-lg);
+}
+.panel.open{right:0}
+.panel-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom:20px;
+  padding-bottom:12px;
+  border-bottom:1px solid var(--border);
+}
+.panel-header h3{font-size:15px;font-weight:600}
+.panel .close{background:none;border:none;color:var(--text3);font-size:22px;cursor:pointer;padding:4px;line-height:1}
+.panel .close:hover{color:var(--text)}
+.panel-section{margin-bottom:16px}
+.panel-section h4{font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text3);margin-bottom:8px;font-weight:500}
+
+/* Toast */
+.toast-container{position:fixed;bottom:20px;right:20px;z-index:200;display:flex;flex-direction:column;gap:8px;max-width:400px}
+.toast{
+  padding:12px 16px;
+  border-radius:var(--radius-sm);
+  background:var(--bg3);
+  border:1px solid var(--border);
+  font-size:13px;
+  animation:slideUp 0.25s ease;
+  box-shadow:var(--shadow-lg);
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.toast.error{border-color:var(--red);color:var(--red)}
+.toast.success{border-color:var(--green);color:var(--green)}
+.toast.info{border-color:var(--accent);color:var(--accent)}
+@keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+
+/* Progress */
+.progress-bar{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin:8px 0}
+.progress-fill{height:100%;border-radius:3px;transition:width 0.35s ease;background:linear-gradient(90deg,var(--accent),#7c3aed)}
+.progress-fill.failed{background:var(--red)}
+.progress-fill.success{background:var(--green)}
+
+/* Data preview */
+.data-preview{
+  max-height:420px;
+  overflow:auto;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  margin-top:12px;
+}
+.data-preview table{font-size:12px}
+.data-preview td,.data-preview th{
+  padding:5px 10px;
+  border:1px solid var(--border);
+  white-space:nowrap;
+  max-width:260px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.data-preview th{background:var(--bg3);position:sticky;top:0;z-index:1}
+
+/* Tabs */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:12px}
+.tab{
+  padding:8px 16px;
+  font-size:13px;
+  color:var(--text2);
+  cursor:pointer;
+  border-bottom:2px solid transparent;
+  transition:all 0.15s;
+  background:none;
+  border-radius:0;
+  border-width:0 0 2px 0;
+}
+.tab:hover{color:var(--text);background:transparent}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab.active:hover{background:transparent}
+
+/* Stage pipeline */
+.pipeline{display:flex;gap:0;margin:12px 0 16px;flex-wrap:wrap;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden}
+.pipeline-step{
+  flex:1;
+  min-width:80px;
+  padding:10px 12px;
+  text-align:center;
+  font-size:12px;
+  color:var(--text3);
+  border-right:1px solid var(--border);
+  background:var(--bg3);
+  transition:all 0.3s;
+  position:relative;
+}
+.pipeline-step:last-child{border-right:none}
+.pipeline-step.done{color:var(--green);background:var(--green-bg)}
+.pipeline-step.active{color:var(--accent);background:rgba(76,154,255,0.08)}
+.pipeline-step.failed{color:var(--red);background:var(--red-bg)}
+.pipeline-step .step-icon{display:block;font-size:16px;margin-bottom:2px}
+.pipeline-step .step-label{font-weight:500}
+
+/* Detail table */
+.detail-table{width:100%;font-size:13px}
+.detail-table td{padding:5px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+.detail-table td:first-child{color:var(--text2);white-space:nowrap;width:1%}
+.detail-table tr:last-child td{border-bottom:none}
+
+/* Misc */
+.flex{display:flex;align-items:center;gap:8px}
+.flex-wrap{flex-wrap:wrap}
+.gap-4{gap:4px}
+.gap-8{gap:8px}
+.gap-12{gap:12px}
+.mt-8{margin-top:8px}
+.mt-12{margin-top:12px}
+.mt-16{margin-top:16px}
+.mb-8{margin-bottom:8px}
+.mb-12{margin-bottom:12px}
+.text-center{text-align:center}
+.text-2{color:var(--text2)}
+.text-3{color:var(--text3)}
+.text-red{color:var(--red)}
+.text-green{color:var(--green)}
+.text-sm{font-size:12px}
+.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mono{font-family:"Cascadia Code","Fira Code","JetBrains Mono",monospace;font-size:12px}
+
+/* Schema details */
+.schema-table{
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  margin-bottom:10px;
+  overflow:hidden;
+}
+.schema-table-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:10px 14px;
+  background:var(--bg3);
+  border-bottom:1px solid var(--border);
+  cursor:pointer;
+  user-select:none;
+  transition:background 0.15s;
+}
+.schema-table-header:hover{background:var(--bg4)}
+.schema-table-header .table-name{font-weight:600;font-size:13px;display:flex;align-items:center;gap:8px}
+.schema-table-header .table-meta{font-size:11px;color:var(--text3);display:flex;gap:8px;align-items:center}
+.schema-table-header .expand-icon{font-size:10px;color:var(--text3);transition:transform 0.2s}
+.schema-table-header.collapsed .expand-icon{transform:rotate(-90deg)}
+.schema-table-body{padding:0}
+.schema-table-body.collapsed{display:none}
+.schema-table-body table{font-size:12px}
+.schema-table-body td{padding:6px 14px}
+.col-pk{color:var(--yellow);font-size:10px;font-weight:700;margin-left:4px}
+.col-fk{color:var(--accent);font-size:10px;font-weight:700;margin-left:4px}
+.col-not-null{color:var(--text3);font-size:10px}
+.col-default{color:var(--green);font-size:10px;font-family:monospace}
+
+/* Spinner */
+.loading-spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;flex-shrink:0}
+.loading-spinner-sm{width:12px;height:12px;border-width:1.5px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-block{text-align:center;padding:40px;color:var(--text2);display:flex;flex-direction:column;align-items:center;gap:8px}
+
+
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header" role="banner">
+  <div class="logo">
+    <span class="logo-icon">SG</span>
+    SynthGraph
+  </div>
+  <nav role="navigation" aria-label="Main navigation">
+    <a onclick="showPage('schema')" id="nav-schema" role="tab" aria-selected="true" tabindex="0">Schema</a>
+    <a onclick="showPage('graph')" id="nav-graph" role="tab" aria-selected="false" tabindex="-1">Graph</a>
+    <a onclick="showPage('generate')" id="nav-generate" role="tab" aria-selected="false" tabindex="-1">Generate</a>
+    <a onclick="showPage('history')" id="nav-history" role="tab" aria-selected="false" tabindex="-1">History</a>
+  </nav>
+  <span class="header-version">v1.0</span>
+</div>
+
+<div class="main" role="main">
+
+<!-- Schema Page -->
+<div class="page active" id="page-schema" role="tabpanel">
+  <div class="card">
+    <div class="card-header">
+      <h2>Parse SQL Schema</h2>
+    </div>
+    <p class="card-desc">Paste your PostgreSQL DDL or upload a <code>.sql</code> file to analyze the schema structure.</p>
+    <div class="form-group" id="sql-input-group">
+      <label for="sql-input">SQL DDL</label>
+      <textarea id="sql-input" rows="10" style="width:100%" placeholder="CREATE TABLE users (&#10;  id BIGSERIAL PRIMARY KEY,&#10;  email VARCHAR(255) UNIQUE NOT NULL,&#10;  created_at TIMESTAMP DEFAULT NOW()&#10);" aria-describedby="sql-error"></textarea>
+      <div class="field-error" id="sql-error"></div>
+    </div>
+    <div class="form-actions">
+      <button class="primary" onclick="parseSchema()" id="parse-btn">Parse Schema</button>
+      <span style="font-size:12px;color:var(--text3)">or</span>
+      <input type="file" id="file-input" accept=".sql" onchange="loadFile(event)" style="width:auto;font-size:12px;padding:4px 8px" aria-label="Upload SQL file">
+    </div>
+  </div>
+
+  <div id="parse-detail" style="display:none">
+    <div class="card">
+      <div class="card-header">
+        <h2>Schema Details <span class="badge badge-blue" id="table-count-badge">0 tables</span></h2>
+      </div>
+      <div id="schema-tables"></div>
+    </div>
+  </div>
+
+  <div class="card" id="parse-summary" style="display:none">
+    <div class="card-header">
+      <h2>Parse Summary</h2>
+    </div>
+    <div id="parse-result" role="status"></div>
+  </div>
+</div>
+
+<!-- Graph Page -->
+<div class="page" id="page-graph" role="tabpanel">
+  <div class="card">
+    <div class="card-header">
+      <h2>Schema Graph</h2>
+    </div>
+    <p class="card-desc">Interactive visualization of tables and foreign-key relationships. Click a node for details.</p>
+    <div class="graph-actions">
+      <button onclick="fitGraph()" title="Fit graph to viewport">Fit</button>
+      <button onclick="resetGraphLayout()" title="Reset layout">Re-layout</button>
+    </div>
+    <div id="cy" role="img" aria-label="Schema graph visualization"></div>
+    <div id="graph-loading" class="loading-block" style="display:none"><span class="loading-spinner"></span>Loading graph...</div>
+    <div class="graph-legend">
+      <span class="legend-item"><span class="legend-dot" style="background:var(--orange)"></span>Junction</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--accent)"></span>Hierarchical</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--green)"></span>Transactional</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--yellow)"></span>Lookup</span>
+      <span class="legend-item"><span class="legend-dot" style="background:var(--text3)"></span>Unknown</span>
+      <span class="legend-item"><span style="display:inline-block;width:20px;height:2px;background:var(--accent);border-top:2px dashed var(--accent)"></span>Nullable FK</span>
+    </div>
+  </div>
+  <div class="card" id="semantic-card" style="display:none">
+    <div class="card-header">
+      <h2>Semantic Analysis</h2>
+    </div>
+    <div id="semantic-content"></div>
+  </div>
+</div>
+
+<!-- Generate Page -->
+<div class="page" id="page-generate" role="tabpanel">
+  <div class="card">
+    <div class="card-header">
+      <h2>Generate Data</h2>
+    </div>
+    <p class="card-desc">Configure and run synthetic data generation based on your schema.</p>
+    <div class="form-group" id="gen-sql-group">
+      <label for="gen-sql">SQL DDL <span class="text-3">(from schema page or paste here)</span></label>
+      <textarea id="gen-sql" rows="8" style="width:100%" aria-describedby="gen-sql-error"></textarea>
+      <div class="field-error" id="gen-sql-error"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="gen-rows">Rows per table</label>
+        <input type="number" id="gen-rows" value="10" min="1" max="100000" aria-describedby="gen-rows-error">
+        <div class="field-error" id="gen-rows-error"></div>
+      </div>
+      <div class="form-group">
+        <label for="gen-seed">Random seed</label>
+        <input type="number" id="gen-seed" value="42" min="0">
+      </div>
+      <div class="form-group">
+        <label for="gen-format">Output format</label>
+        <select id="gen-format">
+          <option value="csv">CSV</option>
+          <option value="sql">SQL</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="gen-schema-name">Schema name <span class="text-3">(SQL only)</span></label>
+        <input type="text" id="gen-schema-name" placeholder="public">
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="primary" onclick="runGeneration()" id="generate-btn">Generate</button>
+    </div>
+
+    <!-- Pipeline -->
+    <div id="gen-pipeline" style="display:none" class="pipeline"></div>
+
+    <!-- Progress -->
+    <div id="gen-progress" style="display:none" role="status" aria-live="polite">
+      <div id="gen-stage" style="font-size:14px;font-weight:600;color:var(--accent);margin-bottom:2px">Starting...</div>
+      <div id="gen-status" style="font-size:12px;color:var(--text2);margin-bottom:4px"></div>
+      <div class="progress-bar"><div class="progress-fill" id="gen-bar" style="width:0%"></div></div>
+    </div>
+
+    <!-- Result -->
+    <div id="gen-result" style="display:none;margin-top:16px">
+      <div class="card-header" style="margin-bottom:0">
+        <h2>Generation Result</h2>
+        <div class="flex gap-8">
+          <button onclick="copyResult()" id="copy-btn" class="small">Copy</button>
+          <button onclick="downloadResult()" class="primary small">Download</button>
+        </div>
+      </div>
+      <div id="result-meta" class="flex gap-12 mb-8 text-sm text-2"></div>
+      <div class="tabs" role="tablist">
+        <div class="tab active" role="tab" aria-selected="true" onclick="switchResultTab('preview',this)">Preview</div>
+        <div class="tab" role="tab" aria-selected="false" onclick="switchResultTab('raw',this)">Raw Data</div>
+      </div>
+      <div id="result-preview"></div>
+      <div id="result-raw" style="display:none">
+        <textarea readonly rows="15" style="width:100%;font-size:12px;font-family:monospace;background:var(--bg)" id="result-raw-text"></textarea>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- History Page -->
+<div class="page" id="page-history" role="tabpanel">
+  <div class="card">
+    <div class="card-header">
+      <h2>Job History</h2>
+      <button onclick="loadHistory()" class="small" title="Refresh history">Refresh</button>
+    </div>
+    <p class="card-desc">Previously completed generation jobs.</p>
+    <div id="history-loading" class="loading-block" style="display:none"><span class="loading-spinner"></span>Loading history...</div>
+    <div id="history-empty" style="display:none;text-align:center;padding:30px;color:var(--text3);font-size:13px">No jobs yet. Generate data to see history here.</div>
+    <div class="table-wrap" id="history-table-wrap">
+      <table class="table" id="history-table" aria-label="Job history">
+        <thead><tr><th>ID</th><th>Time</th><th>Tables</th><th>Format</th><th>Rows</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="history-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<!-- Detail Panel -->
+<div class="panel" id="detail-panel" role="dialog" aria-label="Node details">
+  <div class="panel-header">
+    <h3 id="panel-title">Node Details</h3>
+    <button class="close" onclick="closePanel()" aria-label="Close">&times;</button>
+  </div>
+  <div id="detail-content"></div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toast-container" role="alert" aria-live="polite"></div>
+
+<script>
+// State
+let parsedModel = null;
+let lastResult = null;
+let lastJobData = null;
+let resultTab = 'preview';
+
+// Navigation
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
+  var page = document.getElementById('page-' + name);
+  if (page) page.classList.add('active');
+  document.querySelectorAll('nav a').forEach(function(a) {
+    a.classList.remove('active');
+    a.setAttribute('aria-selected', 'false');
+    a.setAttribute('tabindex', '-1');
+  });
+  var el = document.getElementById('nav-' + name);
+  if (el) {
+    el.classList.add('active');
+    el.setAttribute('aria-selected', 'true');
+    el.setAttribute('tabindex', '0');
+  }
+  if (name === 'history') loadHistory();
+  if (name === 'graph') {
+    if (parsedModel) renderGraph();
+    else document.getElementById('cy').innerHTML = '<div class="loading-block" style="display:flex"><div style="color:var(--text3);font-size:13px">Parse a schema first to see the graph</div></div>';
+  }
+}
+
+// Keyboard nav
+document.querySelector('nav').addEventListener('keydown', function(e) {
+  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+  var tabs = Array.from(this.querySelectorAll('[role="tab"]'));
+  var current = tabs.findIndex(function(a) { return a.classList.contains('active'); });
+  var next = e.key === 'ArrowRight' ? (current + 1) % tabs.length : (current - 1 + tabs.length) % tabs.length;
+  showPage(tabs[next].id.replace('nav-', ''));
+  tabs[next].focus();
+});
+
+// Toast
+function toast(msg, type) {
+  type = type || 'info';
+  var container = document.getElementById('toast-container');
+  var t = document.createElement('div');
+  t.className = 'toast ' + type;
+  var icon = type === 'success' ? '\u2713' : type === 'error' ? '\u2717' : '\u24D8';
+  t.innerHTML = '<span>' + icon + '</span><span>' + escapeHTML(msg) + '</span>';
+  container.appendChild(t);
+  setTimeout(function() { if (t.parentNode) t.remove(); }, 4000);
+}
+
+// File upload
+function loadFile(e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    document.getElementById('sql-input').value = ev.target.result;
+    clearFieldError('sql-input-group');
+    toast('File loaded: ' + file.name, 'info');
+  };
+  reader.readAsText(file);
+}
+
+function clearFieldError(groupId) {
+  var group = document.getElementById(groupId);
+  if (group) group.classList.remove('invalid');
+}
+
+function showFieldError(groupId, message) {
+  var group = document.getElementById(groupId);
+  if (!group) return;
+  group.classList.add('invalid');
+  var errorEl = group.querySelector('.field-error');
+  if (errorEl) errorEl.textContent = message;
+}
+
+function setLoading(btnId, loading) {
+  var btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.disabled = loading;
+  if (loading) {
+    btn.dataset.originalText = btn.textContent;
+    btn.innerHTML = '<span class="loading-spinner loading-spinner-sm"></span> ' + btn.textContent.trim();
+  } else {
+    btn.innerHTML = btn.dataset.originalText || btn.textContent;
+  }
+}
+
+// Parse Schema
+async function parseSchema() {
+  var sql = document.getElementById('sql-input').value.trim();
+  clearFieldError('sql-input-group');
+  if (!sql) { showFieldError('sql-input-group', 'Enter SQL DDL first'); return; }
+  setLoading('parse-btn', true);
+  try {
+    var res = await fetch('/api/parse', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({sql: sql})
+    });
+    var data = await res.json();
+    if (!res.ok) {
+      toast(extractError(data), 'error');
+      var summaryEl = document.getElementById('parse-result');
+      document.getElementById('parse-summary').style.display = 'block';
+      summaryEl.innerHTML = '<div style="color:var(--red);display:flex;align-items:center;gap:6px"><span>\u2717</span><span>' + escapeHTML(extractError(data)) + '</span></div>';
+      return;
+    }
+    parsedModel = data.model;
+    document.getElementById('gen-sql').value = sql;
+
+    // Summary
+    var warnHtml = '';
+    if (data.warnings && data.warnings.length) {
+      warnHtml = '<div style="margin-top:8px"><div class="flex gap-4 text-sm text-2 mb-8" style="color:var(--yellow)"><span>\u26A0</span> Warnings</div>';
+      data.warnings.forEach(function(w) { warnHtml += '<div class="text-sm" style="color:var(--text2);padding:2px 0;padding-left:16px)">' + escapeHTML(w) + '</div>'; });
+      warnHtml += '</div>';
+    }
+    var summaryDiv = document.getElementById('parse-result');
+    document.getElementById('parse-summary').style.display = 'block';
+    summaryDiv.innerHTML = '<div class="flex gap-12 text-sm"><span class="badge badge-blue">' + data.tables + ' tables</span><span class="badge badge-gray">' + data.enums + ' enums</span></div>' + warnHtml;
+    toast('Parsed ' + data.tables + ' tables', 'success');
+
+    // Detailed schema view
+    renderSchemaDetails(data.model);
+    document.getElementById('parse-detail').style.display = 'block';
+    document.getElementById('table-count-badge').textContent = data.tables + ' tables';
+  } catch(err) {
+    toast('Network error: ' + err.message, 'error');
+  } finally {
+    setLoading('parse-btn', false);
+  }
+}
+
+function renderSchemaDetails(model) {
+  var container = document.getElementById('schema-tables');
+  container.innerHTML = '';
+  if (!model || !model.tables) {
+    container.innerHTML = '<div class="text-sm text-2">No tables found in schema.</div>';
+    return;
+  }
+  model.tables.forEach(function(table, idx) {
+    var cols = table.columns || [];
+    var fkCount = (table.foreign_keys || []).length;
+    var colCount = cols.length;
+    var card = document.createElement('div');
+    card.className = 'schema-table';
+    card.innerHTML =
+      '<div class="schema-table-header collapsed" onclick="toggleSchemaTable(this)" role="button" tabindex="0" aria-expanded="false">' +
+        '<div class="table-name">' +
+          '<span class="expand-icon">\u25BC</span>' +
+          '<span>' + escapeHTML(table.name) + '</span>' +
+        '</div>' +
+        '<div class="table-meta">' +
+          '<span>' + colCount + ' col' + (colCount !== 1 ? 's' : '') + '</span>' +
+          (fkCount ? '<span class="badge badge-blue small" style="font-size:10px;padding:0 5px">' + fkCount + ' FK</span>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="schema-table-body collapsed">' +
+        '<table><thead><tr><th>Column</th><th>Type</th><th>Constraints</th><th>Default</th></tr></thead><tbody id="schema-body-' + idx + '"></tbody></table>' +
+      '</div>';
+    container.appendChild(card);
+    var tbody = document.getElementById('schema-body-' + idx);
+    cols.forEach(function(col) {
+      var constraints = [];
+      if (col.primary_key) constraints.push('<span class="col-pk">PK</span>');
+      if (col.foreign_key) constraints.push('<span class="col-fk">FK</span>');
+      if (col.not_null) constraints.push('<span class="col-not-null">NOT NULL</span>');
+      var defaultVal = col.default || '';
+      if (defaultVal) defaultVal = '<span class="col-default">' + escapeHTML(defaultVal) + '</span>';
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td style="font-weight:500">' + escapeHTML(col.name) + '</td><td style="color:var(--text2);font-family:monospace;font-size:12px">' + escapeHTML(col.type) + '</td><td>' + constraints.join(' ') + '</td><td>' + defaultVal + '</td>';
+      tbody.appendChild(tr);
+    });
+  });
+}
+
+function toggleSchemaTable(header) {
+  header.classList.toggle('collapsed');
+  var body = header.nextElementSibling;
+  body.classList.toggle('collapsed');
+  var expanded = !body.classList.contains('collapsed');
+  header.setAttribute('aria-expanded', expanded);
+}
+
+// Graph
+async function renderGraph() {
+  var cyEl = document.getElementById('cy');
+  var loadingEl = document.getElementById('graph-loading');
+  if (!parsedModel) {
+    cyEl.innerHTML = '<div class="loading-block" style="display:flex"><div style="color:var(--text3);font-size:13px">Parse a schema first</div></div>';
+    return;
+  }
+  if (window.cyInstance) {
+    window.cyInstance.destroy();
+    window.cyInstance = null;
+  }
+  loadingEl.style.display = 'flex';
+  cyEl.innerHTML = '';
+  try {
+    var res = await fetch('/api/graph', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({model: parsedModel})
+    });
+    var gData = await res.json();
+    if (!res.ok) { toast(extractError(gData), 'error'); loadingEl.style.display = 'none'; return; }
+    var semRes = await fetch('/api/semantic', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({model: parsedModel})
+    });
+    var semData = await semRes.json();
+    loadingEl.style.display = 'none';
+    var roleMap = {};
+    if (semData.nodes) {
+      semData.nodes.forEach(function(n) { roleMap[n.id] = n.roles || []; });
+    }
+    function nodeColor(roles) {
+      if (roles.indexOf('junction') !== -1) return '#d4761a';
+      if (roles.indexOf('hierarchical') !== -1) return '#4c9aff';
+      if (roles.indexOf('transactional') !== -1) return '#3ecf8e';
+      if (roles.indexOf('lookup') !== -1) return '#e5b83c';
+      return '#6b7d96';
+    }
+    var elements = [];
+    gData.nodes.forEach(function(n) {
+      var roles = roleMap[n.table] || [];
+      elements.push({
+        data: {
+          id: n.id,
+          label: n.table,
+          roles: roles.join(', '),
+          columns: n.columns,
+          isJunction: n.is_junction
+        },
+        style: {'background-color': nodeColor(roles), width: 60, height: 60}
+      });
+    });
+    gData.edges.forEach(function(e) {
+      elements.push({
+        data: {id: e.id, source: e.source, target: e.target, label: e.label},
+        style: {'line-style': e.nullable ? 'dashed' : 'solid'}
+      });
+    });
+    window.cyInstance = cytoscape({
+      container: document.getElementById('cy'),
+      elements: elements,
+      style: [
+        { selector: 'node', style: {
+          'label': 'data(label)', 'font-size': '11px',
+          'text-valign': 'bottom', 'text-halign': 'center',
+          'color': '#dfe6f0', 'text-wrap': 'wrap', 'text-max-width': '80px',
+          'border-width': 2, 'border-color': '#2a3442',
+          'transition-property': 'background-color, border-color',
+          'transition-duration': '0.2s'
+        }},
+        { selector: 'node:selected', style: {
+          'border-color': '#fff', 'border-width': 3
+        }},
+        { selector: 'edge', style: {
+          'width': 2, 'line-color': '#4c9aff',
+          'target-arrow-color': '#4c9aff', 'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier', 'label': 'data(label)', 'font-size': '9px',
+          'color': '#9aa8be', 'text-rotation': 'autorotate'
+        }},
+        { selector: 'edge[?nullable]', style: {
+          'line-style': 'dashed'
+        }}
+      ],
+      layout: { name: 'fcose', quality: 'proof', animate: false, nodeSeparation: 120 }
+    });
+    window.cyInstance.on('tap', 'node', function(evt) {
+      var node = evt.target;
+      var nData = gData.nodes.find(function(n) { return n.id === node.id(); });
+      if (!nData) return;
+      var roles = roleMap[nData.table] || [];
+      var edges = gData.edges.filter(function(e) { return e.source === node.id() || e.target === node.id(); });
+      var html = '<div class="panel-section"><h4>Table</h4><div class="detail-table">' +
+        '<table><tr><td>Name</td><td style="font-weight:600">' + escapeHTML(nData.table) + '</td></tr>' +
+        '<tr><td>Columns</td><td>' + nData.columns + '</td></tr>' +
+        '<tr><td>Junction</td><td>' + (nData.is_junction ? '<span class="badge badge-orange">Yes</span>' : '<span class="badge badge-gray">No</span>') + '</td></tr>' +
+        '<tr><td>Roles</td><td>' + (roles.length ? '<span class="badge ' + roleBadgeClass(roles[0]) + '">' + escapeHTML(roles.join(', ')) + '</span>' : '<span class="text-3">&mdash;</span>') + '</td></tr>' +
+        '</table></div>';
+      if (edges.length) {
+        html += '<div class="panel-section" style="margin-top:16px"><h4>Relationships (' + edges.length + ')</h4><div class="detail-table"><table>';
+        edges.forEach(function(e) {
+          var src = gData.nodes.find(function(n) { return n.id === e.source; });
+          var tgt = gData.nodes.find(function(n) { return n.id === e.target; });
+          html += '<tr><td style="font-size:12px">' + (src ? escapeHTML(src.table) : e.source) + '</td><td style="font-size:12px;color:var(--text3)">\u2192</td><td style="font-size:12px">' + (tgt ? escapeHTML(tgt.table) : e.target) + '</td></tr>';
+        });
+        html += '</table></div>';
+      }
+      html += '<div class="panel-section" style="margin-top:16px">';
+      if (nData.columns && nData.columns.length) {
+        html += '<h4>Columns</h4><div class="detail-table"><table>';
+        nData.columns.forEach(function(c) {
+          html += '<tr><td style="font-size:12px">' + escapeHTML(c.name || c) + '</td><td style="font-size:12px;color:var(--text2)">' + escapeHTML(c.type || '') + '</td></tr>';
+        });
+        html += '</table></div>';
+      }
+      html += '</div>';
+      document.getElementById('detail-content').innerHTML = html;
+      document.getElementById('detail-panel').classList.add('open');
+    });
+    // Semantic roles
+    if (semData.nodes && semData.nodes.length) {
+      var semEl = document.getElementById('semantic-content');
+      var sHtml = '<div class="table-wrap"><table><thead><tr><th>Table</th><th>Role</th><th>Columns</th></tr></thead><tbody>';
+      semData.nodes.forEach(function(n) {
+        if (n.roles && n.roles.length) {
+          var rc = roleBadgeClass(n.roles[0]);
+          sHtml += '<tr><td style="font-weight:500">' + escapeHTML(n.id) + '</td><td>' + n.roles.map(function(r) { return '<span class="badge ' + roleBadgeClass(r) + '">' + escapeHTML(r) + '</span>'; }).join(' ') + '</td><td style="color:var(--text2)">' + (n.columns || '') + '</td></tr>';
+        }
+      });
+      sHtml += '</tbody></table></div>';
+      if (semData.edges && semData.edges.length) {
+        sHtml += '<h4 style="margin-top:16px;font-size:13px;color:var(--text2);margin-bottom:8px">Relationships</h4><div class="table-wrap"><table><thead><tr><th>From</th><th>To</th><th>Kind</th></tr></thead><tbody>';
+        semData.edges.forEach(function(e) {
+          sHtml += '<tr><td style="font-weight:500">' + escapeHTML(e.from) + '</td><td style="font-weight:500">' + escapeHTML(e.to) + '</td><td style="color:var(--text2)">' + escapeHTML(e.kind) + '</td></tr>';
+        });
+        sHtml += '</tbody></table></div>';
+      }
+      semEl.innerHTML = sHtml;
+      document.getElementById('semantic-card').style.display = 'block';
+    }
+  } catch(err) {
+    loadingEl.style.display = 'none';
+    cyEl.innerHTML = '<div class="loading-block" style="display:flex;color:var(--red)"><span>\u2717</span>Error: ' + escapeHTML(err.message) + '</div>';
+    toast('Graph failed to load', 'error');
+  }
+}
+
+function roleBadgeClass(role) {
+  if (role === 'junction') return 'badge-orange';
+  if (role === 'hierarchical') return 'badge-blue';
+  if (role === 'transactional') return 'badge-green';
+  if (role === 'lookup') return 'badge-yellow';
+  return 'badge-gray';
+}
+
+function fitGraph() {
+  if (window.cyInstance) {
+    window.cyInstance.fit(undefined, 40);
+  }
+}
+
+function resetGraphLayout() {
+  if (window.cyInstance) {
+    window.cyInstance.layout({ name: 'fcose', quality: 'proof', animate: true, animationDuration: 500, nodeSeparation: 120 }).run();
+  }
+}
+
+// Generate
+function runGeneration() {
+  var sql = document.getElementById('gen-sql').value.trim();
+  clearFieldError('gen-sql-group');
+  if (!sql) { showFieldError('gen-sql-group', 'Enter SQL DDL first'); return; }
+  var rows = parseInt(document.getElementById('gen-rows').value) || 10;
+  if (rows < 1) { rows = 1; document.getElementById('gen-rows').value = 1; }
+  if (rows > 100000) { rows = 100000; document.getElementById('gen-rows').value = 100000; }
+  var seed = parseInt(document.getElementById('gen-seed').value) || 42;
+  var format = document.getElementById('gen-format').value;
+  var schemaName = document.getElementById('gen-schema-name').value;
+  var progressEl = document.getElementById('gen-progress');
+  var barEl = document.getElementById('gen-bar');
+  var statusEl = document.getElementById('gen-status');
+  var resultEl = document.getElementById('gen-result');
+  var stageEl = document.getElementById('gen-stage');
+  var genBtn = document.getElementById('generate-btn');
+  var pipelineEl = document.getElementById('gen-pipeline');
+
+  progressEl.style.display = 'block';
+  resultEl.style.display = 'none';
+  barEl.style.width = '0%';
+  barEl.className = 'progress-fill';
+  stageEl.textContent = 'Starting...';
+  statusEl.textContent = '';
+  genBtn.disabled = true;
+  genBtn.innerHTML = '<span class="loading-spinner loading-spinner-sm"></span> Generating...';
+
+  var params = new URLSearchParams({
+    input: sql, rows: rows, seed: seed, format: format, schema_name: schemaName
+  });
+  var es = new EventSource('/api/generate/stream?' + params.toString());
+  var lastStage = '';
+  var stages = ['Parsing', 'Analyzing', 'Generating', 'Exporting'];
+
+  // Pipeline visualization
+  pipelineEl.style.display = 'flex';
+  pipelineEl.innerHTML = stages.map(function(s) {
+    return '<div class="pipeline-step" data-stage="' + s.toLowerCase() + '">' +
+      '<span class="step-icon">&#9711;</span>' +
+      '<span class="step-label">' + s + '</span></div>';
+  }).join('');
+
+  es.addEventListener('stage', function(e) {
+    var data = JSON.parse(e.data);
+    lastStage = data.stage;
+    var stageKey = data.stage.toLowerCase();
+    if (data.status === 'processing') {
+      stageEl.textContent = data.stage.charAt(0).toUpperCase() + data.stage.slice(1) + '...';
+      pipelineEl.querySelectorAll('.pipeline-step').forEach(function(s) {
+        var stepStage = s.getAttribute('data-stage');
+        if (stepStage === stageKey) {
+          s.className = 'pipeline-step active';
+          s.querySelector('.step-icon').textContent = '\u25CF';
+        } else if (stages.indexOf(stageKey) > stages.indexOf(stepStage)) {
+          s.className = 'pipeline-step done';
+          s.querySelector('.step-icon').textContent = '\u2713';
+        }
+      });
+    } else if (data.status === 'done') {
+      stageEl.textContent = data.stage.charAt(0).toUpperCase() + data.stage.slice(1) + ' done';
+      pipelineEl.querySelectorAll('.pipeline-step').forEach(function(s) {
+        if (s.getAttribute('data-stage') === stageKey) {
+          s.className = 'pipeline-step done';
+          s.querySelector('.step-icon').textContent = '\u2713';
+        }
+      });
+    }
+  });
+
+  es.addEventListener('progress', function(e) {
+    var data = JSON.parse(e.data);
+    var currentTable = data.current;
+    var totalTables = data.total;
+    var pct = Math.round((currentTable / totalTables) * 100);
+    barEl.style.width = pct + '%';
+    statusEl.textContent = 'Generating ' + escapeHTML(data.table) + ' (' + currentTable + '/' + totalTables + ')';
+  });
+
+  es.addEventListener('complete', function(e) {
+    var data = JSON.parse(e.data);
+    es.close();
+    lastResult = data;
+    lastJobData = data.data;
+    barEl.style.width = '100%';
+    barEl.className = 'progress-fill success';
+    stageEl.textContent = 'Complete';
+    statusEl.textContent = 'Generated ' + data.tables + ' table(s)';
+    if (data.errors && data.errors.length) {
+      statusEl.textContent += ' with ' + data.errors.length + ' warning(s)';
+    }
+    genBtn.disabled = false;
+    genBtn.textContent = 'Generate';
+    toast('Generated ' + data.tables + ' table(s)', 'success');
+
+    // Show result
+    showGenerationResult(data);
+    loadHistory();
+  });
+
+  es.addEventListener('error', function(e) {
+    if (e.eventPhase === EventSource.CLOSED || e.data) {
+      var msg = 'Generation failed';
+      try {
+        var parsed = JSON.parse(e.data);
+        if (parsed && parsed.message) msg = parsed.message;
+      } catch(_) {
+        if (lastStage) msg = 'Connection lost during ' + lastStage;
+      }
+      es.close();
+      barEl.style.width = '100%';
+      barEl.className = 'progress-fill failed';
+      stageEl.textContent = 'Failed';
+      statusEl.textContent = msg;
+      pipelineEl.querySelectorAll('.pipeline-step').forEach(function(s) {
+        var stepStage = s.getAttribute('data-stage');
+        if (stepStage === lastStage.toLowerCase()) {
+          s.className = 'pipeline-step failed';
+          s.querySelector('.step-icon').textContent = '\u2717';
+        }
+      });
+      genBtn.disabled = false;
+      genBtn.textContent = 'Generate';
+      toast(msg, 'error');
+    } else {
+      stageEl.textContent = 'Reconnecting...';
+      statusEl.textContent = 'Connection lost, retrying...';
+    }
+  });
+}
+
+function showGenerationResult(data) {
+  var resultEl = document.getElementById('gen-result');
+  resultEl.style.display = 'block';
+
+  // Meta
+  var metaEl = document.getElementById('result-meta');
+  metaEl.innerHTML = '<span class="badge badge-blue">Job #' + data.job_id + '</span><span>' + data.tables + ' tables</span><span>' + (data.format || '').toUpperCase() + '</span>';
+  if (data.errors && data.errors.length) {
+    metaEl.innerHTML += '<span style="color:var(--yellow)">' + data.errors.length + ' warning(s)</span>';
+  }
+
+  // Warnings
+  var warningsHtml = '';
+  if (data.errors && data.errors.length) {
+    warningsHtml = '<div style="margin:8px 0;padding:8px 12px;background:var(--yellow-bg);border-radius:var(--radius-sm);border:1px solid rgba(229,184,60,0.2)">';
+    data.errors.forEach(function(e) { warningsHtml += '<div style="font-size:12px;color:var(--yellow)"><span>\u26A0</span> ' + escapeHTML(e) + '</div>'; });
+    warningsHtml += '</div>';
+  }
+
+  // Preview tab
+  var previewHtml = warningsHtml;
+  var lines = data.data.split('\n').filter(function(l) { return l.trim(); });
+  var previewLines = lines.slice(0, 21);
+  var csvLines = previewLines.map(function(l) { return parseCSVLine(l); });
+  if (csvLines.length > 0) {
+    previewHtml += '<div class="data-preview"><table><thead><tr>';
+    (csvLines[0] || []).forEach(function(h) { previewHtml += '<th>' + escapeHTML(h) + '</th>'; });
+    previewHtml += '</tr></thead><tbody>';
+    for (var i = 1; i < csvLines.length; i++) {
+      previewHtml += '<tr>';
+      (csvLines[i] || []).forEach(function(c) { previewHtml += '<td>' + escapeHTML(c) + '</td>'; });
+      previewHtml += '</tr>';
+    }
+    previewHtml += '</tbody></table></div>';
+  }
+  document.getElementById('result-preview').innerHTML = previewHtml;
+
+  // Raw tab
+  document.getElementById('result-raw-text').value = data.data;
+
+  // Reset tabs
+  resultTab = 'preview';
+  document.querySelectorAll('#gen-result .tab').forEach(function(t) { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+  document.querySelector('#gen-result .tab').classList.add('active');
+  document.querySelector('#gen-result .tab').setAttribute('aria-selected', 'true');
+  document.getElementById('result-preview').style.display = 'block';
+  document.getElementById('result-raw').style.display = 'none';
+}
+
+function switchResultTab(tab, el) {
+  resultTab = tab;
+  document.querySelectorAll('#gen-result .tab').forEach(function(t) { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+  el.classList.add('active');
+  el.setAttribute('aria-selected', 'true');
+  document.getElementById('result-preview').style.display = tab === 'preview' ? 'block' : 'none';
+  document.getElementById('result-raw').style.display = tab === 'raw' ? 'block' : 'none';
+}
+
+function copyResult() {
+  var text = lastJobData || '';
+  if (!text) { toast('No data to copy', 'error'); return; }
+  navigator.clipboard.writeText(text).then(function() {
+    toast('Copied to clipboard', 'success');
+  }).catch(function() {
+    toast('Failed to copy', 'error');
+  });
+}
+
+function downloadResult() {
+  var data = lastJobData || (lastResult ? lastResult.data : null);
+  if (!data) { toast('No data available', 'error'); return; }
+  var format = (lastResult && lastResult.format) || 'csv';
+  var jobId = (lastResult && lastResult.job_id) || 'download';
+  var blob = new Blob([data], {type: 'text/plain'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'synthgraph-job-' + jobId + '.' + format;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('Downloaded ' + a.download, 'success');
+}
+
+function parseCSVLine(line) {
+  var result = [], current = '', inQuotes = false;
+  for (var i = 0; i < line.length; i++) {
+    var c = line[i];
+    if (c === '"') { inQuotes = !inQuotes; continue; }
+    if (c === ',' && !inQuotes) { result.push(current); current = ''; continue; }
+    current += c;
+  }
+  result.push(current);
+  return result;
+}
+
+function escapeHTML(s) {
+  var d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+function extractError(data) {
+  if (!data) return 'Unknown error';
+  if (typeof data.error === 'string') return data.error;
+  if (data.error && data.error.message) return data.error.message;
+  if (data.message) return data.message;
+  return 'Unknown error';
+}
+
+// History
+async function loadHistory() {
+  var loadingEl = document.getElementById('history-loading');
+  var tbody = document.getElementById('history-body');
+  var empty = document.getElementById('history-empty');
+  loadingEl.style.display = 'flex';
+  tbody.innerHTML = '';
+  try {
+    var res = await fetch('/api/jobs');
+    var jobs = await res.json();
+    loadingEl.style.display = 'none';
+    if (!jobs || jobs.length === 0) {
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    jobs.forEach(function(j) {
+      var statusClass = j.status === 'failed' ? 'badge-red' : (j.errors && j.errors.length ? 'badge-yellow' : 'badge-green');
+      var statusLabel = j.status === 'failed' ? 'Failed' : (j.errors && j.errors.length ? 'Partial' : 'Completed');
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td style="font-weight:500;font-variant-numeric:tabular-nums">#' + j.id + '</td>' +
+        '<td style="font-variant-numeric:tabular-nums">' + new Date(j.created).toLocaleString() + '</td>' +
+        '<td>' + j.tables + '</td>' +
+        '<td>' + (j.format || '').toUpperCase() + '</td>' +
+        '<td style="font-variant-numeric:tabular-nums">' + (j.rows || '') + '</td>' +
+        '<td><span class="badge ' + statusClass + '">' + statusLabel + '</span></td>' +
+        '<td><div class="flex gap-4">' +
+          '<button class="small" onclick="viewJob(' + j.id + ')" title="View result">View</button>' +
+          '<button class="small" onclick="downloadJob(' + j.id + ')" title="Download data">DL</button>' +
+          '<button class="small danger" onclick="deleteJob(' + j.id + ')" title="Delete job">Del</button>' +
+        '</div></td>';
+      tbody.appendChild(tr);
+    });
+  } catch(err) {
+    loadingEl.style.display = 'none';
+    empty.style.display = 'none';
+    tbody.innerHTML = '<tr><td colspan="7" style="color:var(--red);text-align:center">Failed to load: ' + escapeHTML(err.message) + '</td></tr>';
+    toast('Failed to load history', 'error');
+  }
+}
+
+function viewJob(jobId) {
+  showPage('generate');
+  var resultEl = document.getElementById('gen-result');
+  var progressEl = document.getElementById('gen-progress');
+  var pipelineEl = document.getElementById('gen-pipeline');
+  pipelineEl.style.display = 'none';
+  progressEl.style.display = 'none';
+  resultEl.style.display = 'block';
+  resultEl.innerHTML = '<div class="loading-block" style="display:flex"><span class="loading-spinner"></span>Loading job #' + jobId + '...</div>';
+  fetch('/api/jobs/' + jobId).then(function(res) {
+    if (!res.ok) { throw new Error('Job not found'); }
+    return res.json();
+  }).then(function(job) {
+    lastResult = job;
+    lastJobData = job.data;
+    showGenerationResult(job);
+  }).catch(function(err) {
+    resultEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--red)">Error: ' + escapeHTML(err.message) + '</div>';
+    toast('Failed to load job', 'error');
+  });
+}
+
+function downloadJob(jobId) {
+  fetch('/api/jobs/' + jobId).then(function(res) {
+    if (!res.ok) throw new Error('Job not found');
+    return res.json();
+  }).then(function(job) {
+    if (!job.data) { toast('No data in job #' + jobId, 'error'); return; }
+    var format = job.format || 'csv';
+    var blob = new Blob([job.data], {type: 'text/plain'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'synthgraph-job-' + jobId + '.' + format;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast('Downloaded job #' + jobId, 'success');
+  }).catch(function(err) {
+    toast('Error: ' + err.message, 'error');
+  });
+}
+
+function deleteJob(jobId) {
+  if (!confirm('Delete job #' + jobId + '?')) return;
+  fetch('/api/jobs/' + jobId, {method: 'DELETE'}).then(function(res) {
+    if (!res.ok) throw new Error('Delete failed');
+    toast('Deleted job #' + jobId, 'success');
+    loadHistory();
+  }).catch(function(err) {
+    toast('Error: ' + err.message, 'error');
+  });
+}
+
+function closePanel() {
+  document.getElementById('detail-panel').classList.remove('open');
+}
+
+// Init: load history if on that tab initially
+(function() {
+  var activePage = document.querySelector('.page.active');
+  if (activePage && activePage.id === 'page-history') loadHistory();
+})();
+</script>
+</body>
+</html>

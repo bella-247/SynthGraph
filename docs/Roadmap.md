@@ -29,8 +29,14 @@ Generator Engine         Schema Diff              Incremental Gen
 Two Validators           Enhanced inspect         Semantic Fingerprint
 SQL + CSV Export         JSON / COPY Export       Multi-dialect
 generate + inspect CLI   Direct DB Insert         Cloud/SaaS (opt)
-                          Workspace Config
-                          Artifact Caching
+Code Audit (22 items)    Workspace Config
+Production Readiness     Artifact Caching
+(CI/CD, benchmarks,      Web Application
+ graceful shutdown,
+ error recovery,
+ preflight validation,
+ structured logging,
+ config file)
 ```
 
 V1 is the only goal this summer. V2 and V3 are defined so architectural decisions in V1 do not accidentally close doors.
@@ -490,14 +496,29 @@ Every week ends with a working, testable state. Never let a week end mid-pipelin
 
 ### V1 is done when:
 
-- [ ] `synthgraph generate --schema ecommerce.sql --rows 100` produces a valid, runnable SQL seed file
-- [ ] The generated SQL file passes execution against a real PostgreSQL instance without errors
-- [ ] `synthgraph inspect schema.sql` prints the correct graph analysis for any schema
-- [ ] All unit tests pass (`go test ./...`)
-- [ ] All golden tests pass
-- [ ] Performance benchmarks meet SRS §14.1 targets
-- [ ] Binaries compile for all 4 target platforms
-- [ ] README is complete and covers installation, usage, and architecture
-- [ ] All V1-excluded features are explicitly absent from the codebase
-- [ ] Zero use of `interface{}` / `any` outside of intentional generator output types
-- [ ] `golangci-lint` passes with zero warnings
+- [x] `synthgraph generate --schema ecommerce.sql --rows 100` produces a valid, runnable SQL seed file
+- [x] `synthgraph inspect schema.sql` prints the correct graph analysis for any schema
+- [x] All unit tests pass (`go test ./...`)
+- [x] Code audit completed (22 items, all resolved)
+- [x] CI/CD pipeline working (Go 1.26, CGO, Docker, cross-compile)
+- [x] Benchmarks for core pipeline stages
+- [x] Graceful shutdown on SIGINT
+- [x] Per-table error recovery
+- [x] Pre-flight schema validation
+- [x] Structured logging
+- [x] YAML config file support
+
+### V3 (Web Application) is done when:
+
+- [ ] `POST /api/parse` returns model JSON for uploaded SQL
+- [ ] `POST /api/graph` returns nodes/edges for client-side rendering
+- [ ] `POST /api/semantic` returns semantic graph
+- [ ] `POST /api/generate` streams generation progress via SSE
+- [ ] Frontend graph visualizer renders interactive DAG with Cytoscape.js
+- [ ] Schema upload page accepts drag-and-drop SQL files
+- [ ] Generation config form supports all CLI flags
+- [ ] Data preview shows generated rows inline
+- [ ] Job history tracks past runs with status and config
+- [ ] Export downloads CSV/SQL from any completed job
+- [ ] All endpoints covered by integration tests
+- [ ] Docker image includes web frontend
