@@ -144,6 +144,75 @@ func TestExportSQL_WithSchema(t *testing.T) {
 	}
 }
 
+func TestExportSQL_FKVarcharQuoting(t *testing.T) {
+	model := &schema.Model{
+		Tables: []*schema.Table{
+			{
+				Name: "users",
+				Columns: []schema.Column{
+					{Name: "id", Type: "int", IsPrimaryKey: true},
+				},
+				PrimaryKey: []string{"id"},
+			},
+			{
+				Name: "profiles",
+				Columns: []schema.Column{
+					{Name: "id", Type: "int", IsPrimaryKey: true},
+					{Name: "user_id", Type: "varchar"},
+				},
+				PrimaryKey: []string{"id"},
+				ForeignKeys: []schema.ForeignKey{
+					{Columns: []string{"user_id"}, RefTable: "users", RefColumns: []string{"id"}},
+				},
+			},
+		},
+	}
+
+	dataset := buildDataset(t, model)
+	var buf strings.Builder
+	config := &ExportConfig{}
+	err := ExportSQL(&buf, dataset, model, config)
+	if err != nil {
+		t.Fatalf("ExportSQL failed: %v", err)
+	}
+
+	output := buf.String()
+	t.Logf("SQL output:\n%s", output)
+
+	// Users has an int PK — its value tuples should NOT have quotes.
+	usersInsertEnd := strings.Index(output, "INSERT INTO profiles")
+	usersSection := output[:usersInsertEnd]
+	for _, line := range strings.Split(usersSection, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "(") {
+			if strings.Contains(trimmed, "'") {
+				t.Errorf("int column should not have quoted values: %s", trimmed)
+			}
+		}
+	}
+
+	// Profiles has a varchar FK — its value tuples should be quoted.
+	profilesIdx := strings.Index(output, "INTO profiles")
+	if profilesIdx < 0 {
+		t.Fatal("expected profiles INSERT")
+	}
+	profilesSection := output[profilesIdx:]
+	for _, line := range strings.Split(profilesSection, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "(") {
+			inner := strings.TrimSuffix(trimmed, ",")
+			inner = strings.TrimSuffix(inner, ";")
+			parts := strings.Split(inner, ",")
+			if len(parts) >= 2 {
+				second := strings.TrimSpace(parts[1])
+				if !strings.HasPrefix(second, "'") {
+					t.Errorf("varchar FK value in %q should be quoted, got %q", trimmed, second)
+				}
+			}
+		}
+	}
+}
+
 func TestExportSQL_NULLValues(t *testing.T) {
 	model := &schema.Model{
 		Tables: []*schema.Table{
