@@ -9,7 +9,6 @@
 </head>
 <body>
 
-<!-- Header -->
 <div class="header" role="banner">
   <div class="logo">
     <span class="logo-icon">SG</span>
@@ -21,7 +20,10 @@
     <a onclick="showPage('generate')" id="nav-generate" role="tab" aria-selected="false" tabindex="-1">Generate</a>
     <a onclick="showPage('history')" id="nav-history" role="tab" aria-selected="false" tabindex="-1">History</a>
   </nav>
-  <span class="header-version">v1.0</span>
+  <div class="header-actions">
+    <button class="icon-btn" onclick="toggleShortcuts()" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><span class="kbd-shortcut">?</span></button>
+    <span class="header-version">v1.0</span>
+  </div>
 </div>
 
 <div class="main" role="main">
@@ -32,10 +34,19 @@
     <div class="card-header">
       <h2>Parse SQL Schema</h2>
     </div>
-    <p class="card-desc">Paste your PostgreSQL DDL or upload a <code>.sql</code> file to analyze the schema structure.</p>
+    <p class="card-desc">Paste your PostgreSQL DDL to analyze the schema structure, visualize relationships, and generate synthetic data.</p>
+    <div class="form-group">
+      <label for="template-select">Quick-start template</label>
+      <select id="template-select" onchange="loadTemplate(this.value)" aria-label="Load a template schema">
+        <option value="">-- Select a template --</option>
+        <option value="ecommerce">E-Commerce (products, orders, customers)</option>
+        <option value="blog">Blog (posts, comments, authors)</option>
+        <option value="saas">SaaS (organizations, users, billing)</option>
+      </select>
+    </div>
     <div class="form-group" id="sql-input-group">
       <label for="sql-input">SQL DDL</label>
-      <textarea id="sql-input" rows="10" style="width:100%" placeholder="CREATE TABLE users (&#10;  id BIGSERIAL PRIMARY KEY,&#10;  email VARCHAR(255) UNIQUE NOT NULL,&#10;  created_at TIMESTAMP DEFAULT NOW()&#10);" aria-describedby="sql-error"></textarea>
+      <textarea id="sql-input" rows="10" style="width:100%" placeholder="CREATE TABLE users (&#10;  id BIGSERIAL PRIMARY KEY,&#10;  email VARCHAR(255) UNIQUE NOT NULL,&#10;  created_at TIMESTAMP DEFAULT NOW()&#10);" aria-describedby="sql-error" spellcheck="false"></textarea>
       <div class="field-error" id="sql-error"></div>
     </div>
     <div class="form-actions">
@@ -68,10 +79,17 @@
     <div class="card-header">
       <h2>Schema Graph</h2>
     </div>
-    <p class="card-desc">Interactive visualization of tables and foreign-key relationships. Click a node for details.</p>
-    <div class="graph-actions">
-      <button onclick="fitGraph()" title="Fit graph to viewport">Fit</button>
-      <button onclick="resetGraphLayout()" title="Reset layout">Re-layout</button>
+    <p class="card-desc">Interactive visualization of tables and foreign-key relationships. Click a node for details. Use <kbd>?</kbd> for shortcuts.</p>
+    <div class="graph-toolbar">
+      <div class="graph-search">
+        <input type="text" id="graph-search" placeholder="Search nodes..." oninput="filterGraph(this.value)" aria-label="Search graph nodes">
+        <button class="icon-btn" onclick="document.getElementById('graph-search').value='';filterGraph('')" title="Clear search">&times;</button>
+      </div>
+      <div class="graph-actions">
+        <button onclick="fitGraph()" title="Fit graph to viewport">Fit</button>
+        <button onclick="resetGraphLayout()" title="Reset layout">Re-layout</button>
+        <button onclick="exportGraph()" title="Export as PNG" class="small">Export PNG</button>
+      </div>
     </div>
     <div id="cy" role="img" aria-label="Schema graph visualization"></div>
     <div id="graph-loading" class="loading-block" style="display:none"><span class="loading-spinner"></span>Loading graph...</div>
@@ -81,7 +99,7 @@
       <span class="legend-item"><span class="legend-dot" style="background:var(--green)"></span>Transactional</span>
       <span class="legend-item"><span class="legend-dot" style="background:var(--yellow)"></span>Lookup</span>
       <span class="legend-item"><span class="legend-dot" style="background:var(--text3)"></span>Unknown</span>
-      <span class="legend-item"><span style="display:inline-block;width:20px;height:2px;background:var(--accent);border-top:2px dashed var(--accent)"></span>Nullable FK</span>
+      <span class="legend-item"><span class="legend-line legend-line-dashed"></span>Nullable FK</span>
     </div>
   </div>
   <div class="card" id="semantic-card" style="display:none">
@@ -101,7 +119,7 @@
     <p class="card-desc">Configure and run synthetic data generation based on your schema.</p>
     <div class="form-group" id="gen-sql-group">
       <label for="gen-sql">SQL DDL <span class="text-3">(from schema page or paste here)</span></label>
-      <textarea id="gen-sql" rows="8" style="width:100%" aria-describedby="gen-sql-error"></textarea>
+      <textarea id="gen-sql" rows="8" style="width:100%" aria-describedby="gen-sql-error" spellcheck="false"></textarea>
       <div class="field-error" id="gen-sql-error"></div>
     </div>
     <div class="form-row">
@@ -130,17 +148,14 @@
       <button class="primary" onclick="runGeneration()" id="generate-btn">Generate</button>
     </div>
 
-    <!-- Pipeline -->
     <div id="gen-pipeline" style="display:none" class="pipeline"></div>
 
-    <!-- Progress -->
     <div id="gen-progress" style="display:none" role="status" aria-live="polite">
       <div id="gen-stage" style="font-size:14px;font-weight:600;color:var(--accent);margin-bottom:2px">Starting...</div>
       <div id="gen-status" style="font-size:12px;color:var(--text2);margin-bottom:4px"></div>
       <div class="progress-bar"><div class="progress-fill" id="gen-bar" style="width:0%"></div></div>
     </div>
 
-    <!-- Result -->
     <div id="gen-result" style="display:none;margin-top:16px">
       <div class="card-header" style="margin-bottom:0">
         <h2>Generation Result</h2>
@@ -150,13 +165,14 @@
         </div>
       </div>
       <div id="result-meta" class="flex gap-12 mb-8 text-sm text-2"></div>
+      <div id="result-profiling" style="display:none;margin-bottom:12px"></div>
       <div class="tabs" role="tablist">
         <div class="tab active" role="tab" aria-selected="true" onclick="switchResultTab('preview',this)">Preview</div>
         <div class="tab" role="tab" aria-selected="false" onclick="switchResultTab('raw',this)">Raw Data</div>
       </div>
       <div id="result-preview"></div>
       <div id="result-raw" style="display:none">
-        <textarea readonly rows="15" style="width:100%;font-size:12px;font-family:monospace;background:var(--bg)" id="result-raw-text"></textarea>
+        <textarea readonly rows="15" style="width:100%;font-size:12px;font-family:monospace;background:var(--bg)" id="result-raw-text" spellcheck="false"></textarea>
       </div>
     </div>
   </div>
@@ -181,6 +197,26 @@
   </div>
 </div>
 
+</div>
+
+<!-- Shortcuts Modal -->
+<div class="modal-overlay" id="shortcuts-modal" style="display:none" onclick="if(event.target===this)toggleShortcuts()" role="dialog" aria-label="Keyboard shortcuts">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Keyboard Shortcuts</h3>
+      <button class="close" onclick="toggleShortcuts()" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="shortcut-row"><span class="kbd">S</span><span>Schema page</span></div>
+      <div class="shortcut-row"><span class="kbd">G</span><span>Graph page</span></div>
+      <div class="shortcut-row"><span class="kbd">D</span><span>Generate page</span></div>
+      <div class="shortcut-row"><span class="kbd">H</span><span>History page</span></div>
+      <div class="shortcut-row"><span class="kbd">?</span><span>Toggle shortcuts</span></div>
+      <div class="shortcut-row"><span class="kbd">Esc</span><span>Close panel / modal</span></div>
+      <div class="shortcut-row"><span class="kbd">&larr;</span><span class="kbd">&rarr;</span><span>Navigate tabs</span></div>
+      <div class="shortcut-row"><span class="kbd">Ctrl</span><span class="kbd">Enter</span><span>Parse schema / Generate</span></div>
+    </div>
+  </div>
 </div>
 
 <!-- Detail Panel -->

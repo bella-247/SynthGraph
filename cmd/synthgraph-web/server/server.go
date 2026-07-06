@@ -32,6 +32,8 @@ type streamCacheEntry struct {
 type Server struct {
 	jobStore        *JobStore
 	indexHTML       string
+	stylesCSS       string
+	appJS           string
 	handler         http.Handler
 	httpServer      *http.Server
 	streamCache     sync.Map
@@ -39,7 +41,7 @@ type Server struct {
 	streamCacheDone chan struct{}
 }
 
-func New(indexHTML string, jobPersistPath string) *Server {
+func New(indexHTML string, stylesCSS string, appJS string, jobPersistPath string) *Server {
 	var jobStore *JobStore
 	if jobPersistPath != "" {
 		jobStore = NewJobStoreWithPersistence(jobPersistPath)
@@ -50,6 +52,8 @@ func New(indexHTML string, jobPersistPath string) *Server {
 	server := &Server{
 		jobStore:        jobStore,
 		indexHTML:       indexHTML,
+		stylesCSS:       stylesCSS,
+		appJS:           appJS,
 		streamCacheDone: make(chan struct{}),
 	}
 
@@ -66,6 +70,8 @@ func New(indexHTML string, jobPersistPath string) *Server {
 	requestMux.HandleFunc("GET /api/generate/stream", server.handleGenerateStream)
 	requestMux.HandleFunc("GET /api/health", server.handleHealth)
 	requestMux.HandleFunc("GET /", server.handleFrontend)
+	requestMux.HandleFunc("GET /styles.css", server.handleStyles)
+	requestMux.HandleFunc("GET /app.js", server.handleAppJS)
 
 	wrappedHandler := recoveryMiddleware(
 		requestLoggingMiddleware(

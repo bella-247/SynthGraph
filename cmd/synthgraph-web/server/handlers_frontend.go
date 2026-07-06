@@ -12,6 +12,18 @@ import (
 
 var serverStartTime = time.Now()
 
+// handleStyles serves the embedded CSS at GET /styles.css.
+func (server *Server) handleStyles(responseWriter http.ResponseWriter, request *http.Request) {
+	responseWriter.Header().Set("Content-Type", "text/css; charset=utf-8")
+	responseWriter.Write([]byte(server.stylesCSS))
+}
+
+// handleAppJS serves the embedded JS at GET /app.js.
+func (server *Server) handleAppJS(responseWriter http.ResponseWriter, request *http.Request) {
+	responseWriter.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	responseWriter.Write([]byte(server.appJS))
+}
+
 // handleFrontend serves the embedded SPA at GET /.
 // Any path other than "/" returns a 404.
 func (server *Server) handleFrontend(responseWriter http.ResponseWriter, request *http.Request) {

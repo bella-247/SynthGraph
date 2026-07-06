@@ -1,10 +1,158 @@
-// State
-let parsedModel = null;
-let lastResult = null;
-let lastJobData = null;
-let resultTab = 'preview';
+var parsedModel = null;
+var lastResult = null;
+var lastJobData = null;
+var resultTab = 'preview';
 
-// Navigation
+var TEMPLATES = {
+  ecommerce: [
+    "CREATE TABLE categories (",
+    "  id SERIAL PRIMARY KEY,",
+    "  name VARCHAR(100) NOT NULL,",
+    "  slug VARCHAR(100) UNIQUE NOT NULL,",
+    "  description TEXT,",
+    "  parent_id INT REFERENCES categories(id)",
+    ");",
+    "",
+    "CREATE TABLE products (",
+    "  id SERIAL PRIMARY KEY,",
+    "  name VARCHAR(200) NOT NULL,",
+    "  sku VARCHAR(50) UNIQUE NOT NULL,",
+    "  price DECIMAL(10,2) NOT NULL CHECK (price > 0),",
+    "  category_id INT NOT NULL REFERENCES categories(id),",
+    "  stock INT NOT NULL DEFAULT 0,",
+    "  active BOOLEAN NOT NULL DEFAULT true,",
+    "  created_at TIMESTAMP DEFAULT NOW()",
+    ");",
+    "",
+    "CREATE TABLE customers (",
+    "  id SERIAL PRIMARY KEY,",
+    "  first_name VARCHAR(100) NOT NULL,",
+    "  last_name VARCHAR(100) NOT NULL,",
+    "  email VARCHAR(255) UNIQUE NOT NULL,",
+    "  city VARCHAR(100),",
+    "  state VARCHAR(50),",
+    "  zip VARCHAR(20),",
+    "  registered_at TIMESTAMP DEFAULT NOW()",
+    ");",
+    "",
+    "CREATE TABLE orders (",
+    "  id SERIAL PRIMARY KEY,",
+    "  customer_id INT NOT NULL REFERENCES customers(id),",
+    "  order_date TIMESTAMP DEFAULT NOW(),",
+    "  total DECIMAL(12,2) NOT NULL,",
+    "  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','shipped','delivered','cancelled')),",
+    "  shipping_city VARCHAR(100),",
+    "  shipping_state VARCHAR(50),",
+    "  shipping_zip VARCHAR(20)",
+    ");",
+    "",
+    "CREATE TABLE order_items (",
+    "  id SERIAL PRIMARY KEY,",
+    "  order_id INT NOT NULL REFERENCES orders(id),",
+    "  product_id INT NOT NULL REFERENCES products(id),",
+    "  quantity INT NOT NULL CHECK (quantity > 0),",
+    "  unit_price DECIMAL(10,2) NOT NULL,",
+    "  UNIQUE(order_id, product_id)",
+    ");"
+  ].join('\n'),
+  blog: [
+    "CREATE TABLE authors (",
+    "  id SERIAL PRIMARY KEY,",
+    "  name VARCHAR(200) NOT NULL,",
+    "  email VARCHAR(255) UNIQUE NOT NULL,",
+    "  bio TEXT,",
+    "  avatar_url VARCHAR(500),",
+    "  created_at TIMESTAMP DEFAULT NOW()",
+    ");",
+    "",
+    "CREATE TABLE posts (",
+    "  id SERIAL PRIMARY KEY,",
+    "  author_id INT NOT NULL REFERENCES authors(id),",
+    "  title VARCHAR(300) NOT NULL,",
+    "  slug VARCHAR(300) UNIQUE NOT NULL,",
+    "  body TEXT NOT NULL,",
+    "  published BOOLEAN NOT NULL DEFAULT false,",
+    "  views INT DEFAULT 0,",
+    "  created_at TIMESTAMP DEFAULT NOW(),",
+    "  updated_at TIMESTAMP DEFAULT NOW()",
+    ");",
+    "",
+    "CREATE TABLE tags (",
+    "  id SERIAL PRIMARY KEY,",
+    "  name VARCHAR(50) UNIQUE NOT NULL,",
+    "  color VARCHAR(7) DEFAULT '#3b82f6'",
+    ");",
+    "",
+    "CREATE TABLE post_tags (",
+    "  post_id INT NOT NULL REFERENCES posts(id),",
+    "  tag_id INT NOT NULL REFERENCES tags(id),",
+    "  PRIMARY KEY (post_id, tag_id)",
+    ");",
+    "",
+    "CREATE TABLE comments (",
+    "  id SERIAL PRIMARY KEY,",
+    "  post_id INT NOT NULL REFERENCES posts(id),",
+    "  author_name VARCHAR(100) NOT NULL,",
+    "  author_email VARCHAR(255),",
+    "  body TEXT NOT NULL,",
+    "  approved BOOLEAN NOT NULL DEFAULT false,",
+    "  created_at TIMESTAMP DEFAULT NOW()",
+    ");"
+  ].join('\n'),
+  saas: [
+    "CREATE TABLE plans (",
+    "  id SERIAL PRIMARY KEY,",
+    "  name VARCHAR(100) NOT NULL,",
+    "  code VARCHAR(50) UNIQUE NOT NULL,",
+    "  price_cents INT NOT NULL CHECK (price_cents >= 0),",
+    "  max_users INT NOT NULL,",
+    "  features JSONB,",
+    "  active BOOLEAN NOT NULL DEFAULT true",
+    ");",
+    "",
+    "CREATE TABLE organizations (",
+    "  id SERIAL PRIMARY KEY,",
+    "  name VARCHAR(200) NOT NULL,",
+    "  slug VARCHAR(200) UNIQUE NOT NULL,",
+    "  plan_id INT NOT NULL REFERENCES plans(id),",
+    "  created_at TIMESTAMP DEFAULT NOW(),",
+    "  trial_ends_at TIMESTAMP",
+    ");",
+    "",
+    "CREATE TABLE users (",
+    "  id SERIAL PRIMARY KEY,",
+    "  organization_id INT NOT NULL REFERENCES organizations(id),",
+    "  email VARCHAR(255) UNIQUE NOT NULL,",
+    "  name VARCHAR(200) NOT NULL,",
+    "  role VARCHAR(20) NOT NULL DEFAULT 'member' CHECK (role IN ('admin','member','viewer')),",
+    "  active BOOLEAN NOT NULL DEFAULT true,",
+    "  last_login TIMESTAMP,",
+    "  created_at TIMESTAMP DEFAULT NOW()",
+    ");",
+    "",
+    "CREATE TABLE subscriptions (",
+    "  id SERIAL PRIMARY KEY,",
+    "  organization_id INT NOT NULL REFERENCES organizations(id),",
+    "  plan_id INT NOT NULL REFERENCES plans(id),",
+    "  start_date TIMESTAMP NOT NULL DEFAULT NOW(),",
+    "  end_date TIMESTAMP,",
+    "  status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','cancelled','expired')),",
+    "  auto_renew BOOLEAN NOT NULL DEFAULT true",
+    ");",
+    "",
+    "CREATE TABLE invoices (",
+    "  id SERIAL PRIMARY KEY,",
+    "  organization_id INT NOT NULL REFERENCES organizations(id),",
+    "  amount_cents INT NOT NULL,",
+    "  currency VARCHAR(3) NOT NULL DEFAULT 'USD',",
+    "  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','paid','overdue','cancelled')),",
+    "  due_date DATE NOT NULL,",
+    "  paid_at TIMESTAMP,",
+    "  created_at TIMESTAMP DEFAULT NOW()",
+    ");"
+  ].join('\n')
+};
+
 function showPage(name) {
   document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
   var page = document.getElementById('page-' + name);
@@ -27,7 +175,6 @@ function showPage(name) {
   }
 }
 
-// Keyboard nav
 document.querySelector('nav').addEventListener('keydown', function(e) {
   if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
   var tabs = Array.from(this.querySelectorAll('[role="tab"]'));
@@ -37,7 +184,27 @@ document.querySelector('nav').addEventListener('keydown', function(e) {
   tabs[next].focus();
 });
 
-// Toast
+document.addEventListener('keydown', function(e) {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  if (e.key === '?') { toggleShortcuts(); return; }
+  if (e.key === 'Escape') {
+    if (document.getElementById('shortcuts-modal').style.display !== 'none') { toggleShortcuts(); return; }
+    if (document.getElementById('detail-panel').classList.contains('open')) { closePanel(); return; }
+    return;
+  }
+  var map = {s:'schema', g:'graph', d:'generate', h:'history'};
+  if (map[e.key]) { showPage(map[e.key]); e.preventDefault(); }
+});
+
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    var activePage = document.querySelector('.page.active');
+    if (!activePage) return;
+    if (activePage.id === 'page-schema') { parseSchema(); e.preventDefault(); }
+    else if (activePage.id === 'page-generate') { runGeneration(); e.preventDefault(); }
+  }
+});
+
 function toast(msg, type) {
   type = type || 'info';
   var container = document.getElementById('toast-container');
@@ -49,7 +216,6 @@ function toast(msg, type) {
   setTimeout(function() { if (t.parentNode) t.remove(); }, 4000);
 }
 
-// File upload
 function loadFile(e) {
   var file = e.target.files[0];
   if (!file) return;
@@ -57,9 +223,17 @@ function loadFile(e) {
   reader.onload = function(ev) {
     document.getElementById('sql-input').value = ev.target.result;
     clearFieldError('sql-input-group');
+    document.getElementById('template-select').value = '';
     toast('File loaded: ' + file.name, 'info');
   };
   reader.readAsText(file);
+}
+
+function loadTemplate(value) {
+  if (!value || !TEMPLATES[value]) return;
+  document.getElementById('sql-input').value = TEMPLATES[value];
+  clearFieldError('sql-input-group');
+  toast('Template loaded', 'info');
 }
 
 function clearFieldError(groupId) {
@@ -75,6 +249,11 @@ function showFieldError(groupId, message) {
   if (errorEl) errorEl.textContent = message;
 }
 
+function toggleShortcuts() {
+  var modal = document.getElementById('shortcuts-modal');
+  modal.style.display = modal.style.display === 'none' ? 'flex' : 'none';
+}
+
 function setLoading(btnId, loading) {
   var btn = document.getElementById(btnId);
   if (!btn) return;
@@ -87,7 +266,6 @@ function setLoading(btnId, loading) {
   }
 }
 
-// Parse Schema
 async function parseSchema() {
   var sql = document.getElementById('sql-input').value.trim();
   clearFieldError('sql-input-group');
@@ -110,7 +288,6 @@ async function parseSchema() {
     parsedModel = data.model;
     document.getElementById('gen-sql').value = sql;
 
-    // Summary
     var warnHtml = '';
     if (data.warnings && data.warnings.length) {
       warnHtml = '<div style="margin-top:8px"><div class="flex gap-4 text-sm text-2 mb-8" style="color:var(--yellow)"><span>\u26A0</span> Warnings</div>';
@@ -122,7 +299,6 @@ async function parseSchema() {
     summaryDiv.innerHTML = '<div class="flex gap-12 text-sm"><span class="badge badge-blue">' + data.tables + ' tables</span><span class="badge badge-gray">' + data.enums + ' enums</span></div>' + warnHtml;
     toast('Parsed ' + data.tables + ' tables', 'success');
 
-    // Detailed schema view
     renderSchemaDetails(data.model);
     document.getElementById('parse-detail').style.display = 'block';
     document.getElementById('table-count-badge').textContent = data.tables + ' tables';
@@ -146,12 +322,10 @@ function renderSchemaDetails(model) {
     var checkCount = (table.checks || []).length;
     var colCount = cols.length;
 
-    // Build FK column set from table-level foreign key definitions
     var fkCols = {};
     (table.foreign_keys || []).forEach(function(fk) {
       (fk.columns || []).forEach(function(c) { fkCols[c] = true; });
     });
-    // Build unique column set from table-level unique constraints
     var uniqueCols = {};
     (table.unique || []).forEach(function(group) {
       (group || []).forEach(function(c) { uniqueCols[c] = true; });
@@ -176,7 +350,6 @@ function renderSchemaDetails(model) {
       '</div>';
     container.appendChild(card);
 
-    // Build rows
     var tbody = document.getElementById('schema-body-' + idx);
     cols.forEach(function(col) {
       var constraints = [];
@@ -202,7 +375,6 @@ function renderSchemaDetails(model) {
       tbody.appendChild(tr);
     });
 
-    // CHECK constraints section
     if (checkCount > 0) {
       var checkRow = document.createElement('tr');
       var checkHtml = '<td colspan="4" style="padding:6px 14px;background:var(--bg3)">';
@@ -226,7 +398,6 @@ function toggleSchemaTable(header) {
   header.setAttribute('aria-expanded', expanded);
 }
 
-// Graph
 async function renderGraph() {
   var cyEl = document.getElementById('cy');
   var loadingEl = document.getElementById('graph-loading');
@@ -261,10 +432,10 @@ async function renderGraph() {
     }
     function nodeColor(roles) {
       if (roles.indexOf('junction') !== -1) return '#d4761a';
-      if (roles.indexOf('hierarchical') !== -1) return '#4c9aff';
-      if (roles.indexOf('transactional') !== -1) return '#3ecf8e';
-      if (roles.indexOf('lookup') !== -1) return '#e5b83c';
-      return '#6b7d96';
+      if (roles.indexOf('hierarchical') !== -1) return '#3b82f6';
+      if (roles.indexOf('transactional') !== -1) return '#22c55e';
+      if (roles.indexOf('lookup') !== -1) return '#eab308';
+      return '#64748b';
     }
     var elements = [];
     gData.nodes.forEach(function(n) {
@@ -293,19 +464,19 @@ async function renderGraph() {
         { selector: 'node', style: {
           'label': 'data(label)', 'font-size': '11px',
           'text-valign': 'bottom', 'text-halign': 'center',
-          'color': '#dfe6f0', 'text-wrap': 'wrap', 'text-max-width': '80px',
-          'border-width': 2, 'border-color': '#2a3442',
-          'transition-property': 'background-color, border-color',
+          'color': '#e2e8f0', 'text-wrap': 'wrap', 'text-max-width': '80px',
+          'border-width': 2, 'border-color': '#263040',
+          'transition-property': 'background-color, border-color, opacity',
           'transition-duration': '0.2s'
         }},
         { selector: 'node:selected', style: {
           'border-color': '#fff', 'border-width': 3
         }},
         { selector: 'edge', style: {
-          'width': 2, 'line-color': '#4c9aff',
-          'target-arrow-color': '#4c9aff', 'target-arrow-shape': 'triangle',
+          'width': 2, 'line-color': '#3b82f6',
+          'target-arrow-color': '#3b82f6', 'target-arrow-shape': 'triangle',
           'curve-style': 'bezier', 'label': 'data(label)', 'font-size': '9px',
-          'color': '#9aa8be', 'text-rotation': 'autorotate'
+          'color': '#94a3b8', 'text-rotation': 'autorotate'
         }},
         { selector: 'edge[?nullable]', style: {
           'line-style': 'dashed'
@@ -346,7 +517,6 @@ async function renderGraph() {
       document.getElementById('detail-content').innerHTML = html;
       document.getElementById('detail-panel').classList.add('open');
     });
-    // Semantic roles
     if (semData.nodes && semData.nodes.length) {
       var semEl = document.getElementById('semantic-content');
       var sHtml = '<div class="table-wrap"><table><thead><tr><th>Table</th><th>Role</th><th>Columns</th></tr></thead><tbody>';
@@ -394,7 +564,34 @@ function resetGraphLayout() {
   }
 }
 
-// Generate
+function filterGraph(query) {
+  if (!window.cyInstance) return;
+  var q = query.trim().toLowerCase();
+  window.cyInstance.nodes().forEach(function(n) {
+    var match = !q || n.data('label').toLowerCase().indexOf(q) !== -1;
+    n.style('opacity', match ? 1 : 0.15);
+    n.style('border-color', match ? '#263040' : '#18222e');
+  });
+  window.cyInstance.edges().forEach(function(e) {
+    var src = e.source();
+    var tgt = e.target();
+    var match = src.style('opacity') == 1 && tgt.style('opacity') == 1;
+    e.style('opacity', match ? 1 : 0.08);
+  });
+}
+
+function exportGraph() {
+  if (!window.cyInstance) { toast('No graph to export', 'error'); return; }
+  var png = window.cyInstance.png({full: true, scale: 2, bg: '#0a0e14'});
+  var a = document.createElement('a');
+  a.href = png;
+  a.download = 'synthgraph-schema.png';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  toast('Graph exported as PNG', 'success');
+}
+
 function runGeneration() {
   var sql = document.getElementById('gen-sql').value.trim();
   clearFieldError('gen-sql-group');
@@ -429,7 +626,6 @@ function runGeneration() {
   var lastStage = '';
   var stages = ['Parsing', 'Analyzing', 'Generating', 'Exporting'];
 
-  // Pipeline visualization
   pipelineEl.style.display = 'flex';
   pipelineEl.innerHTML = stages.map(function(s) {
     return '<div class="pipeline-step" data-stage="' + s.toLowerCase() + '">' +
@@ -489,7 +685,6 @@ function runGeneration() {
     genBtn.textContent = 'Generate';
     toast('Generated ' + data.tables + ' table(s)', 'success');
 
-    // Show result
     showGenerationResult(data);
     loadHistory();
   });
@@ -529,22 +724,19 @@ function showGenerationResult(data) {
   var resultEl = document.getElementById('gen-result');
   resultEl.style.display = 'block';
 
-  // Meta
   var metaEl = document.getElementById('result-meta');
   metaEl.innerHTML = '<span class="badge badge-blue">Job #' + data.job_id + '</span><span>' + data.tables + ' tables</span><span>' + (data.format || '').toUpperCase() + '</span>';
   if (data.errors && data.errors.length) {
     metaEl.innerHTML += '<span style="color:var(--yellow)">' + data.errors.length + ' warning(s)</span>';
   }
 
-  // Warnings
   var warningsHtml = '';
   if (data.errors && data.errors.length) {
-    warningsHtml = '<div style="margin:8px 0;padding:8px 12px;background:var(--yellow-bg);border-radius:var(--radius-sm);border:1px solid rgba(229,184,60,0.2)">';
+    warningsHtml = '<div style="margin:8px 0;padding:8px 12px;background:var(--yellow-bg);border-radius:var(--radius-sm);border:1px solid rgba(234,179,8,0.2)">';
     data.errors.forEach(function(e) { warningsHtml += '<div style="font-size:12px;color:var(--yellow)"><span>\u26A0</span> ' + escapeHTML(e) + '</div>'; });
     warningsHtml += '</div>';
   }
 
-  // Preview tab
   var previewHtml = warningsHtml;
   var lines = data.data.split('\n').filter(function(l) { return l.trim(); });
   var previewLines = lines.slice(0, 21);
@@ -555,23 +747,84 @@ function showGenerationResult(data) {
     previewHtml += '</tr></thead><tbody>';
     for (var i = 1; i < csvLines.length; i++) {
       previewHtml += '<tr>';
-      (csvLines[i] || []).forEach(function(c) { previewHtml += '<td>' + escapeHTML(c) + '</td>'; });
+      (csvLines[i] || []).forEach(function(c) { previewHtml += '<td onclick="copyCell(this)" title="Click to copy">' + escapeHTML(c) + '</td>'; });
       previewHtml += '</tr>';
     }
     previewHtml += '</tbody></table></div>';
   }
   document.getElementById('result-preview').innerHTML = previewHtml;
 
-  // Raw tab
   document.getElementById('result-raw-text').value = data.data;
 
-  // Reset tabs
   resultTab = 'preview';
   document.querySelectorAll('#gen-result .tab').forEach(function(t) { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
   document.querySelector('#gen-result .tab').classList.add('active');
   document.querySelector('#gen-result .tab').setAttribute('aria-selected', 'true');
   document.getElementById('result-preview').style.display = 'block';
   document.getElementById('result-raw').style.display = 'none';
+
+  showProfiling(data.data, (csvLines[0] || []));
+}
+
+function showProfiling(rawData, headers) {
+  var container = document.getElementById('result-profiling');
+  var lines = rawData.split('\n').filter(function(l) { return l.trim(); });
+  if (lines.length < 2) { container.style.display = 'none'; return; }
+
+  var dataLines = lines.slice(1);
+  var colCount = headers.length;
+  if (colCount === 0) { container.style.display = 'none'; return; }
+
+  var cols = [];
+  for (var i = 0; i < colCount; i++) {
+    var vals = [];
+    var nulls = 0;
+    for (var j = 0; j < dataLines.length; j++) {
+      var row = parseCSVLine(dataLines[j]);
+      if (i < row.length) {
+        var v = row[i].trim();
+        if (v === '' || v === 'NULL' || v === 'null') { nulls++; continue; }
+        vals.push(v);
+      } else {
+        nulls++;
+      }
+    }
+    var type = 'text';
+    var allNumbers = vals.length > 0 && vals.every(function(v) { return !isNaN(parseFloat(v)) && isFinite(v); });
+    var allInts = allNumbers && vals.every(function(v) { return v.indexOf('.') === -1; });
+    if (allInts) type = 'integer';
+    else if (allNumbers) type = 'decimal';
+    var samples = vals.slice(0, 3);
+    cols.push({name: headers[i], type: type, nulls: nulls, total: dataLines.length, samples: samples, distinct: new Set(vals).size});
+  }
+
+  var html = '<div class="card-header" style="margin-bottom:8px"><h2>Data Profile <span class="text-3 text-sm">' + dataLines.length + ' rows</span></h2></div>';
+  html += '<div class="profiling-grid">';
+  cols.forEach(function(c) {
+    var typeBadge = c.type === 'integer' ? 'badge-blue' : c.type === 'decimal' ? 'badge-purple' : 'badge-gray';
+    html += '<div class="profiling-card">' +
+      '<div class="prof-col-name">' + escapeHTML(c.name) + '</div>' +
+      '<div><span class="badge ' + typeBadge + '" style="font-size:9px;padding:0 5px">' + c.type + '</span></div>' +
+      '<div class="prof-stat"><span>Nulls</span><span class="prof-val">' + c.nulls + '/' + c.total + '</span></div>' +
+      '<div class="prof-stat"><span>Distinct</span><span class="prof-val">' + c.distinct + '</span></div>';
+    if (c.samples.length) {
+      html += '<div class="prof-stat" style="flex-wrap:wrap"><span>Samples</span><span class="prof-val" style="font-size:10px">' + c.samples.map(function(s) { return escapeHTML(s.length > 20 ? s.slice(0,20) + '...' : s); }).join(', ') + '</span></div>';
+    }
+    html += '</div>';
+  });
+  html += '</div>';
+  container.innerHTML = html;
+  container.style.display = 'block';
+}
+
+function copyCell(el) {
+  var text = el.textContent;
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(function() {
+    var orig = el.style.background;
+    el.style.background = 'rgba(59,130,246,0.15)';
+    setTimeout(function() { el.style.background = orig; }, 300);
+  }).catch(function() {});
 }
 
 function switchResultTab(tab, el) {
@@ -636,7 +889,6 @@ function extractError(data) {
   return 'Unknown error';
 }
 
-// History
 async function loadHistory() {
   var loadingEl = document.getElementById('history-loading');
   var tbody = document.getElementById('history-body');
@@ -737,7 +989,6 @@ function closePanel() {
   document.getElementById('detail-panel').classList.remove('open');
 }
 
-// Init: load history if on that tab initially
 (function() {
   var activePage = document.querySelector('.page.active');
   if (activePage && activePage.id === 'page-history') loadHistory();
