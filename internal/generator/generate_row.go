@@ -71,10 +71,10 @@ func generateTable(
 				}
 			}
 
-	// Retry on UNIQUE violation.
-		if tracker.isUniqueColumn(column.Name) {
-			const maxUniqueRetries = 10
-			for attempts := 0; attempts < maxUniqueRetries; attempts++ {
+			// Retry on UNIQUE violation.
+			if tracker.isUniqueColumn(column.Name) {
+				const maxUniqueRetries = 100
+				for attempts := 0; attempts < maxUniqueRetries; attempts++ {
 					if !tracker.checkSeen(column.Name, value) {
 						break
 					}
@@ -89,6 +89,18 @@ func generateTable(
 					}
 				}
 				tracker.record(column.Name, value)
+			}
+
+			// NOT NULL safeguard: if the value is nil and the column is NOT NULL,
+			// generate a placeholder to avoid constraint violations.
+			if value == nil && !column.Nullable {
+				colLower := column.Name
+				switch {
+				case colLower == "id":
+					value = int64(0)
+				default:
+					value = "PLACEHOLDER"
+				}
 			}
 
 			row[column.Name] = value
