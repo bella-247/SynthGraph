@@ -2,8 +2,11 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -14,13 +17,26 @@ const (
 	serverWriteTimeout  = 0
 	serverIdleTimeout   = 120 * time.Second
 	shutdownGracePeriod = 30 * time.Second
+	streamCacheTTL      = 60 * time.Second
 )
 
+type streamCacheEntry struct {
+	jobID   int
+	tables  int
+	errors  []string
+	data    []byte
+	format  string
+	expires time.Time
+}
+
 type Server struct {
-	jobStore  *JobStore
-	indexHTML string
-	handler   http.Handler
-	httpServer *http.Server
+	jobStore        *JobStore
+	indexHTML       string
+	handler         http.Handler
+	httpServer      *http.Server
+	streamCache     sync.Map
+	streamCacheMu   sync.Mutex
+	streamCacheDone chan struct{}
 }
 
 func New(indexHTML string, jobPersistPath string) *Server {
@@ -32,9 +48,12 @@ func New(indexHTML string, jobPersistPath string) *Server {
 	}
 
 	server := &Server{
-		jobStore:  jobStore,
-		indexHTML: indexHTML,
+		jobStore:        jobStore,
+		indexHTML:       indexHTML,
+		streamCacheDone: make(chan struct{}),
 	}
+
+	go server.evictStreamCacheLoop()
 
 	requestMux := http.NewServeMux()
 	requestMux.HandleFunc("GET /api/jobs", server.handleListJobs)
@@ -66,6 +85,52 @@ func New(indexHTML string, jobPersistPath string) *Server {
 	return server
 }
 
+// generationFingerprint creates a unique key for a stream request
+// so reconnecting EventSource clients can be served from cache.
+func generationFingerprint(rawSQL string, rowCount int, seed int64, format, schemaName string) string {
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%s|%d|%d|%s|%s", rawSQL, rowCount, seed, format, schemaName)))
+	return fmt.Sprintf("%x", hash[:16])
+}
+
+func (server *Server) cacheStreamResult(key string, entry *streamCacheEntry) {
+	server.streamCacheMu.Lock()
+	defer server.streamCacheMu.Unlock()
+	server.streamCache.Store(key, entry)
+}
+
+func (server *Server) getCachedStreamResult(key string) *streamCacheEntry {
+	value, loaded := server.streamCache.Load(key)
+	if !loaded {
+		return nil
+	}
+	entry := value.(*streamCacheEntry)
+	if time.Now().After(entry.expires) {
+		server.streamCache.Delete(key)
+		return nil
+	}
+	return entry
+}
+
+func (server *Server) evictStreamCacheLoop() {
+	ticker := time.NewTicker(streamCacheTTL / 2)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now()
+			server.streamCache.Range(func(key, value interface{}) bool {
+				entry := value.(*streamCacheEntry)
+				if now.After(entry.expires) {
+					server.streamCache.Delete(key)
+				}
+				return true
+			})
+		case <-server.streamCacheDone:
+			return
+		}
+	}
+}
+
 func (server *Server) Handler() http.Handler {
 	return server.handler
 }
@@ -87,6 +152,7 @@ func (server *Server) ListenAndServe(address string) error {
 }
 
 func (server *Server) Shutdown() error {
+	close(server.streamCacheDone)
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownGracePeriod)
 	defer cancel()
 	log.Print("shutting down server...")

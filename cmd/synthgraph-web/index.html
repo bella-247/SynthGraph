@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SynthGraph</title>
 <script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"></script>
-<script src="https://unpkg.com/cytoscape-fcose/cytoscape-fcose.js"></script>
 <style>
 :root {
   --bg: #0b0e14;
@@ -411,6 +410,7 @@ table tr:hover td{background:rgba(255,255,255,0.02)}
 .schema-table-body td{padding:6px 14px}
 .col-pk{color:var(--yellow);font-size:10px;font-weight:700;margin-left:4px}
 .col-fk{color:var(--accent);font-size:10px;font-weight:700;margin-left:4px}
+.col-unique{color:#c084fc;font-size:10px;font-weight:700;margin-left:4px}
 .col-not-null{color:var(--text3);font-size:10px}
 .col-default{color:var(--green);font-size:10px;font-family:monospace}
 
@@ -776,11 +776,22 @@ function renderSchemaDetails(model) {
       '</div>';
     container.appendChild(card);
     var tbody = document.getElementById('schema-body-' + idx);
+    // Build FK column set from table-level foreign key definitions
+    var fkCols = {};
+    (table.foreign_keys || []).forEach(function(fk) {
+      (fk.columns || []).forEach(function(c) { fkCols[c] = true; });
+    });
+    // Build unique column set from table-level unique constraints
+    var uniqueCols = {};
+    (table.unique || []).forEach(function(group) {
+      (group || []).forEach(function(c) { uniqueCols[c] = true; });
+    });
     cols.forEach(function(col) {
       var constraints = [];
-      if (col.primary_key) constraints.push('<span class="col-pk">PK</span>');
-      if (col.foreign_key) constraints.push('<span class="col-fk">FK</span>');
-      if (col.not_null) constraints.push('<span class="col-not-null">NOT NULL</span>');
+      if (col.is_primary_key) constraints.push('<span class="col-pk">PK</span>');
+      if (fkCols[col.name]) constraints.push('<span class="col-fk">FK</span>');
+      if (uniqueCols[col.name]) constraints.push('<span class="col-unique">UNIQUE</span>');
+      if (!col.nullable) constraints.push('<span class="col-not-null">NOT NULL</span>');
       var defaultVal = col.default || '';
       if (defaultVal) defaultVal = '<span class="col-default">' + escapeHTML(defaultVal) + '</span>';
       var tr = document.createElement('tr');
@@ -883,7 +894,7 @@ async function renderGraph() {
           'line-style': 'dashed'
         }}
       ],
-      layout: { name: 'fcose', quality: 'proof', animate: false, nodeSeparation: 120 }
+      layout: { name: 'cose', animate: false, nodeSeparation: 120, gravity: 0.8 }
     });
     window.cyInstance.on('tap', 'node', function(evt) {
       var node = evt.target;
@@ -962,7 +973,7 @@ function fitGraph() {
 
 function resetGraphLayout() {
   if (window.cyInstance) {
-    window.cyInstance.layout({ name: 'fcose', quality: 'proof', animate: true, animationDuration: 500, nodeSeparation: 120 }).run();
+    window.cyInstance.layout({ name: 'cose', animate: true, animationDuration: 500, nodeSeparation: 120, gravity: 0.8 }).run();
   }
 }
 

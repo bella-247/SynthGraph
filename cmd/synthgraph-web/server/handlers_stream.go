@@ -110,6 +110,27 @@ func (server *Server) handleGenerateStream(responseWriter http.ResponseWriter, r
 		outputFormat = "csv"
 	}
 
+	// Compute a fingerprint so reconnecting EventSource clients
+	// get the cached result instead of re-running the pipeline.
+	reqKey := generationFingerprint(rawSQL, rowCount, seed, outputFormat, schemaName)
+	if cached := server.getCachedStreamResult(reqKey); cached != nil {
+		log.Printf("serving cached stream result for key=%s (job %d)", reqKey[:12], cached.jobID)
+		stream.sendEvent("stage", map[string]string{"stage": "parsing", "status": "done"})
+		stream.sendEvent("stage", map[string]string{"stage": "graphing", "status": "done"})
+		stream.sendEvent("stage", map[string]string{"stage": "semantic", "status": "done"})
+		stream.sendEvent("stage", map[string]string{"stage": "planning", "status": "done"})
+		stream.sendEvent("stage", map[string]string{"stage": "generating", "status": "done"})
+		stream.sendEvent("stage", map[string]string{"stage": "exporting", "status": "done"})
+		stream.sendEvent("complete", map[string]interface{}{
+			"job_id": cached.jobID,
+			"tables": cached.tables,
+			"errors": cached.errors,
+			"data":   string(cached.data),
+			"format": cached.format,
+		})
+		return
+	}
+
 	requestContext := request.Context()
 	requestContext, cancel := context.WithTimeout(requestContext, DefaultTimeout)
 	defer cancel()
@@ -242,6 +263,16 @@ func (server *Server) handleGenerateStream(responseWriter http.ResponseWriter, r
 		Format: outputFormat,
 	}
 	server.jobStore.Add(job)
+
+	// Cache the result for reconnecting EventSource clients.
+	server.cacheStreamResult(reqKey, &streamCacheEntry{
+		jobID:   job.ID,
+		tables:  len(dataset.Tables),
+		errors:  partialErrors,
+		data:    exportedData,
+		format:  outputFormat,
+		expires: time.Now().Add(streamCacheTTL),
+	})
 
 	stream.sendEvent("complete", map[string]interface{}{
 		"job_id": job.ID,

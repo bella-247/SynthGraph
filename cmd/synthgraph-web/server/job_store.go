@@ -70,7 +70,7 @@ func (jobStore *JobStore) Add(job *Job) {
 	jobStore.nextID++
 	jobStore.jobs = append(jobStore.jobs, job)
 	if jobStore.persistPath != "" {
-		jobStore.appendToDisk(job)
+		jobStore.rewriteDisk()
 	}
 }
 
@@ -152,11 +152,3 @@ func (jobStore *JobStore) loadFromDisk() {
 	}
 }
 
-func (jobStore *JobStore) appendToDisk(job *Job) {
-	file, openError := os.OpenFile(jobStore.persistPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if openError != nil {
-		return
-	}
-	defer file.Close()
-	json.NewEncoder(file).Encode(job)
-}
