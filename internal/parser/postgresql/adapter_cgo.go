@@ -280,7 +280,14 @@ func convertTypeName(typeName *pg_query.TypeName) ColumnType {
 	}
 
 	if len(nameParts) > 0 {
-		columnType.BaseType = strings.ToLower(nameParts[len(nameParts)-1])
+		// Skip leading "pg_catalog" and join remaining parts into a full type name.
+		// This handles multi-word types like "double precision" that pg_query may
+		// represent as ["pg_catalog", "double"] or ["pg_catalog", "double", "precision"].
+		startIndex := 0
+		if strings.ToLower(nameParts[0]) == "pg_catalog" {
+			startIndex = 1
+		}
+		columnType.BaseType = strings.ToLower(strings.Join(nameParts[startIndex:], " "))
 	} else {
 		columnType.BaseType = "unknown"
 	}

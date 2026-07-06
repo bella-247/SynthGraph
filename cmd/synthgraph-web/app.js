@@ -320,11 +320,16 @@ function renderSchemaDetails(model) {
     var cols = table.columns || [];
     var fkCount = (table.foreign_keys || []).length;
     var checkCount = (table.checks || []).length;
+    var uniqueCount = (table.unique || []).length;
+    var pkCount = (table.primary_key || []).length;
     var colCount = cols.length;
 
-    var fkCols = {};
+    // Build lookup: FK column name \u2192 FK details
+    var fkMap = {};
     (table.foreign_keys || []).forEach(function(fk) {
-      (fk.columns || []).forEach(function(c) { fkCols[c] = true; });
+      (fk.columns || []).forEach(function(colName) {
+        fkMap[colName] = fk;
+      });
     });
     var uniqueCols = {};
     (table.unique || []).forEach(function(group) {
@@ -332,8 +337,10 @@ function renderSchemaDetails(model) {
     });
 
     var headerBadges = '<span>' + colCount + ' col' + (colCount !== 1 ? 's' : '') + '</span>';
+    if (pkCount) headerBadges += '<span class="badge badge-yellow small" style="font-size:10px;padding:0 5px">PK</span>';
     if (fkCount) headerBadges += '<span class="badge badge-blue small" style="font-size:10px;padding:0 5px">' + fkCount + ' FK</span>';
-    if (checkCount) headerBadges += '<span class="badge badge-orange small" style="font-size:10px;padding:0 5px">' + checkCount + ' CHECK</span>';
+    if (uniqueCount) headerBadges += '<span class="badge badge-purple small" style="font-size:10px;padding:0 5px">' + uniqueCount + ' UQ</span>';
+    if (checkCount) headerBadges += '<span class="badge badge-orange small" style="font-size:10px;padding:0 5px">' + checkCount + ' CHK</span>';
 
     var card = document.createElement('div');
     card.className = 'schema-table';
@@ -353,11 +360,39 @@ function renderSchemaDetails(model) {
     var tbody = document.getElementById('schema-body-' + idx);
     cols.forEach(function(col) {
       var constraints = [];
-      if (col.is_primary_key) constraints.push('<span class="col-pk">PK</span>');
-      if (fkCols[col.name]) constraints.push('<span class="col-fk">FK</span>');
-      if (uniqueCols[col.name]) constraints.push('<span class="col-unique">UNIQUE</span>');
-      if (!col.nullable) constraints.push('<span class="col-not-null">NOT NULL</span>');
 
+      // Primary key
+      if (col.is_primary_key) constraints.push('<span class="col-pk">PK</span>');
+
+      // Foreign key \u2013 show referenced table + columns + actions
+      var fk = fkMap[col.name];
+      if (fk) {
+        var fkRef = escapeHTML(fk.ref_table);
+        if (fk.ref_columns && fk.ref_columns.length) {
+          fkRef += '(' + fk.ref_columns.map(function(c) { return escapeHTML(c); }).join(', ') + ')';
+        }
+        var fkActions = '';
+        if (fk.on_delete && fk.on_delete !== 'NO ACTION') fkActions += ' DEL:' + escapeHTML(fk.on_delete);
+        if (fk.on_update && fk.on_update !== 'NO ACTION') fkActions += ' UPD:' + escapeHTML(fk.on_update);
+        constraints.push(
+          '<span class="col-fk" title="' + (fkActions ? 'ON' + fkActions : '') + '">FK</span>' +
+          '<span style="color:var(--accent);font-size:9px;margin-left:2px;opacity:0.8">\u2192 ' + fkRef + '</span>'
+        );
+      }
+
+      // UNIQUE
+      if (uniqueCols[col.name] && !col.is_primary_key) {
+        constraints.push('<span class="col-unique">UNIQUE</span>');
+      }
+
+      // Nullability — always show one so no column looks blank
+      if (col.nullable === false || col.is_primary_key) {
+        constraints.push('<span class="col-not-null">NOT NULL</span>');
+      } else if (col.nullable === true) {
+        constraints.push('<span class="col-nullable">NULL</span>');
+      }
+
+      // Type with length/precision
       var typeDisplay = escapeHTML(col.type);
       if (col.length > 0) typeDisplay += '(' + col.length + (col.precision > 0 ? ',' + col.precision : '') + ')';
 
@@ -370,18 +405,62 @@ function renderSchemaDetails(model) {
       var tr = document.createElement('tr');
       tr.innerHTML = '<td style="font-weight:500">' + escapeHTML(col.name) + semTag + '</td>' +
         '<td style="color:var(--text2);font-family:monospace;font-size:12px">' + typeDisplay + '</td>' +
-        '<td>' + constraints.join(' ') + '</td>' +
+        '<td style="line-height:1.7">' + constraints.join(' ') + '</td>' +
         '<td>' + defaultVal + '</td>';
       tbody.appendChild(tr);
     });
 
-    if (checkCount > 0) {
+    // Foreign Key details section
+    var foreignKeys = table.foreign_keys || [];
+    if (foreignKeys.length > 0) {
+      var fkSectionRow = document.createElement('tr');
+      var fkHtml = '<td colspan="4" style="padding:8px 14px;background:var(--bg3)">';
+      fkHtml += '<div style="font-size:11px;color:var(--accent);margin-bottom:6px"><span>\u2192</span> Foreign Keys</div>';
+      foreignKeys.forEach(function(fk) {
+        var colList = (fk.columns || []).map(function(c) { return escapeHTML(c); }).join(', ');
+        var refColList = (fk.ref_columns || []).map(function(c) { return escapeHTML(c); }).join(', ');
+        fkHtml += '<div style="font-size:11px;color:var(--text2);font-family:monospace;padding:2px 0;display:flex;gap:8px;align-items:baseline">';
+        fkHtml += '<span style="color:var(--accent);min-width:120px">' + colList + '</span>';
+        fkHtml += '<span style="color:var(--text3)">\u2192</span>';
+        fkHtml += '<span style="color:var(--text)">' + escapeHTML(fk.ref_table) + '(' + refColList + ')</span>';
+        var actions = [];
+        if (fk.on_delete && fk.on_delete !== 'NO ACTION') actions.push('ON DELETE ' + escapeHTML(fk.on_delete));
+        if (fk.on_update && fk.on_update !== 'NO ACTION') actions.push('ON UPDATE ' + escapeHTML(fk.on_update));
+        if (actions.length) {
+          fkHtml += '<span style="color:var(--orange);font-size:10px;margin-left:auto">' + actions.join(' ') + '</span>';
+        }
+        fkHtml += '</div>';
+      });
+      fkHtml += '</td>';
+      fkSectionRow.innerHTML = fkHtml;
+      tbody.appendChild(fkSectionRow);
+    }
+
+    // Unique constraints section
+    var uniqueGroups = table.unique || [];
+    if (uniqueGroups.length > 0) {
+      var uqSectionRow = document.createElement('tr');
+      var uqHtml = '<td colspan="4" style="padding:8px 14px;background:var(--bg3);border-top:1px solid var(--border)">';
+      uqHtml += '<div style="font-size:11px;color:#c084fc;margin-bottom:4px"><span>\u2630</span> Unique Constraints</div>';
+      uniqueGroups.forEach(function(group) {
+        var colList = (group || []).map(function(c) { return escapeHTML(c); }).join(', ');
+        uqHtml += '<div style="font-size:11px;color:var(--text2);font-family:monospace;padding:1px 6px">(' + colList + ')</div>';
+      });
+      uqHtml += '</td>';
+      uqSectionRow.innerHTML = uqHtml;
+      tbody.appendChild(uqSectionRow);
+    }
+
+    // CHECK constraints section
+    var checks = table.checks || [];
+    if (checks.length > 0) {
       var checkRow = document.createElement('tr');
-      var checkHtml = '<td colspan="4" style="padding:6px 14px;background:var(--bg3)">';
-      checkHtml += '<div style="font-size:11px;color:var(--orange);margin-bottom:4px"><span>\u2691</span> CHECK constraints</div>';
-      (table.checks || []).forEach(function(chk) {
-        checkHtml += '<div style="font-size:11px;color:var(--text2);font-family:monospace;padding:1px 0">' +
-          (chk.name ? escapeHTML(chk.name) + ': ' : '') + escapeHTML(chk.expression) + '</div>';
+      var checkHtml = '<td colspan="4" style="padding:8px 14px;background:var(--bg3);border-top:1px solid var(--border)">';
+      checkHtml += '<div style="font-size:11px;color:var(--orange);margin-bottom:4px"><span>\u2691</span> CHECK Constraints</div>';
+      checks.forEach(function(chk) {
+        var label = chk.name ? escapeHTML(chk.name) + ': ' : '';
+        checkHtml += '<div style="font-size:11px;color:var(--text2);font-family:monospace;padding:1px 6px">' +
+          label + escapeHTML(chk.expression) + '</div>';
       });
       checkHtml += '</td>';
       checkRow.innerHTML = checkHtml;

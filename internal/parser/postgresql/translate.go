@@ -101,6 +101,7 @@ func (translator *schemaTranslator) build() *schema.Model {
 		for columnIndex := range table.Columns {
 			if primaryKeySet[table.Columns[columnIndex].Name] {
 				table.Columns[columnIndex].IsPrimaryKey = true
+				table.Columns[columnIndex].Nullable = false
 			}
 		}
 
