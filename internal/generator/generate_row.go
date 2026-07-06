@@ -26,6 +26,9 @@ func generateTable(
 
 	rng := newTableRNG(ctx.GlobalSeed, tableName)
 
+	// Look up the table's semantic node for temporal pattern and role info.
+	semNode := ctx.SemanticGraph.Nodes["table:"+tableName]
+
 	generated := &GeneratedTable{
 		TableName: tableName,
 		Rows:      make([]GeneratedRow, 0, rowCount),
@@ -41,8 +44,14 @@ func generateTable(
 		row := make(GeneratedRow, len(table.Columns))
 
 		// Phase 0: Pre-compute cross-column correlated values for this row
-		// (e.g. city/state/zip consistency, first/last/full_name consistency).
+		// (e.g. city/state/zip consistency, first/last/full_name consistency,
+		// temporal coherence: created_at < updated_at, deleted_at distribution).
 		rowValues := precomputeRowValues(table, rng)
+		if semNode != nil {
+			for colName, val := range precomputeTemporalValues(table, semNode.Temporal, rowIndex, rng) {
+				rowValues[colName] = val
+			}
+		}
 
 		for _, column := range table.Columns {
 			// Use pre-computed correlated values if available.

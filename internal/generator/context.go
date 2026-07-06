@@ -2,8 +2,11 @@ package generator
 
 import (
 	"math/rand/v2"
+	"strings"
+	"time"
 
 	"synthgraph/internal/schema"
+	"synthgraph/internal/semantic"
 )
 
 // GeoLocation is a correlated city/state/zip triad used for consistent
@@ -118,6 +121,70 @@ func precomputeRowValues(table *schema.Table, rng *rand.Rand) map[string]any {
 				values[col.Name] = pair.Last
 			case schema.SemanticFullName:
 				values[col.Name] = pair.First + " " + pair.Last
+			}
+		}
+	}
+
+	return values
+}
+
+// temporalColumnName checks if a column name matches a known temporal pattern.
+func temporalColumnName(name string) (kind string) {
+	lower := strings.ToLower(name)
+	switch lower {
+	case "created_at", "createdat", "created":
+		return "created"
+	case "updated_at", "updatedat", "updated":
+		return "updated"
+	case "deleted_at", "deletedat", "deleted":
+		return "deleted"
+	}
+	return ""
+}
+
+// precomputeTemporalValues returns a map of column name → pre-computed
+// timestamp value for a single row. Created_at increases with row index,
+// updated_at >= created_at, and deleted_at is NULL for ~90% of rows.
+func precomputeTemporalValues(table *schema.Table, temporal *semantic.TemporalPattern, rowIndex int, rng *rand.Rand) map[string]any {
+	if temporal == nil {
+		return nil
+	}
+
+	baseTime := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	rowOffset := time.Duration(rowIndex) * 24 * time.Hour
+	createdTime := baseTime.Add(rowOffset).Add(time.Duration(rng.Int64N(86400)) * time.Second)
+
+	timestampFmt := "2006-01-02 15:04:05"
+
+	values := make(map[string]any, 3)
+
+	if temporal.HasCreatedAt {
+		for _, col := range table.Columns {
+			if temporalColumnName(col.Name) == "created" {
+				values[col.Name] = createdTime.Format(timestampFmt)
+			}
+		}
+	}
+
+	if temporal.HasUpdatedAt {
+		updateOffset := time.Duration(rng.Int64N(30*24)) * time.Hour
+		updatedTime := createdTime.Add(updateOffset)
+		for _, col := range table.Columns {
+			if temporalColumnName(col.Name) == "updated" {
+				values[col.Name] = updatedTime.Format(timestampFmt)
+			}
+		}
+	}
+
+	if temporal.HasDeletedAt {
+		for _, col := range table.Columns {
+			if temporalColumnName(col.Name) == "deleted" {
+				if rng.Float64() < 0.1 {
+					deleteOffset := time.Duration(rng.Int64N(365*2)) * 24 * time.Hour
+					values[col.Name] = createdTime.Add(deleteOffset).Format(timestampFmt)
+				} else {
+					values[col.Name] = nil
+				}
 			}
 		}
 	}
