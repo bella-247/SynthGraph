@@ -5,6 +5,7 @@ import (
 
 	"synthgraph/internal/graph"
 	"synthgraph/internal/planner"
+	"synthgraph/internal/semantic"
 )
 
 const maxUniqueRetries = 100
@@ -40,6 +41,11 @@ func generateTable(
 	// Track generated values for UNIQUE constraint enforcement.
 	tracker := newUniqueTracker(table)
 
+	// Build the set of aggregation FK columns (nullable, optional relationships).
+	// These columns are left NULL with ~20% probability to reflect real-world
+	// optionality instead of always picking a FK value.
+	aggFKs := buildAggregationFKSet(ctx.SemanticGraph, tableName)
+
 	for rowIndex := 0; rowIndex < rowCount; rowIndex++ {
 		row := make(GeneratedRow, len(table.Columns))
 
@@ -67,6 +73,11 @@ func generateTable(
 
 			// FK columns: pick a PK value from the referenced table.
 			if fkInfo, isFK := isFKColumn(tableFKCols, column.Name); isFK {
+				// Aggregation (optional) FK: leave NULL ~20% of the time.
+				if aggFKs[column.Name] && rng.Float64() < aggFKNullProbability {
+					row[column.Name] = nil
+					continue
+				}
 				pkValues, referencedAvailable := tablePKs[fkInfo.RefTable]
 				if !referencedAvailable || len(pkValues) == 0 {
 					return nil, &GenError{
@@ -155,3 +166,33 @@ func generateTable(
 
 	return generated, nil
 }
+
+// buildAggregationFKSet returns the set of FK column names whose semantic
+// relationship kind is aggregation (nullable, optional). These columns are
+// left NULL with a configurable probability in the generation loop.
+func buildAggregationFKSet(semGraph *semantic.SemanticGraph, tableName string) map[string]bool {
+	if semGraph == nil {
+		return nil
+	}
+	tableNodeID := "table:" + tableName
+	aggFKs := make(map[string]bool)
+	for _, rel := range semGraph.Relationships {
+		if rel.From == tableNodeID && rel.Kind == semantic.RelationshipKindAggregation {
+			if fkMeta, ok := rel.Metadata.(*graph.FKMetadata); ok {
+				for _, col := range fkMeta.LocalColumns {
+					aggFKs[col] = true
+				}
+			}
+		}
+	}
+	if len(aggFKs) == 0 {
+		return nil
+	}
+	return aggFKs
+}
+
+// aggFKNullProbability is the fraction of rows where an aggregation FK column
+// is left NULL instead of populated with a referenced PK value, reflecting
+// real-world optionality in nullable foreign key relationships.
+const aggFKNullProbability = 0.2
+
