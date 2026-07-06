@@ -60,6 +60,7 @@ var typeMap = map[string]AbstractType{
 	"real":               TypeFloat,
 	"float4":             TypeFloat,
 	"float":              TypeFloat,
+	"double":             TypeDouble,
 	"double precision":   TypeDouble,
 	"float8":             TypeDouble,
 	"date":               TypeDate,
