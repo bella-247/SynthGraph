@@ -93,6 +93,12 @@ type GenerationContext struct {
 
 	// SemanticGraph carries inferred roles, relationships, and patterns.
 	SemanticGraph *semantic.SemanticGraph
+
+	// Registry is an optional pluggable generator registry. When set, it
+	// overrides the default package-level registry, allowing callers to
+	// extend or replace semantic type → generator mappings without
+	// modifying global state. When nil, the defaultRegistry is used.
+	Registry *Registry
 }
 
 // PartialError records a generation failure for a single table when the

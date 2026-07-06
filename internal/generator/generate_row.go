@@ -41,6 +41,13 @@ func generateTable(
 	// Track generated values for UNIQUE constraint enforcement.
 	tracker := newUniqueTracker(table)
 
+	// Resolve the semantic generator registry: use context's if set,
+	// otherwise fall back to the package-level default.
+	registry := defaultRegistry
+	if ctx.Registry != nil {
+		registry = ctx.Registry
+	}
+
 	// Build the set of aggregation FK columns (nullable, optional relationships).
 	// These columns are left NULL with ~20% probability to reflect real-world
 	// optionality instead of always picking a FK value.
@@ -95,7 +102,7 @@ func generateTable(
 			// Semantic-aware generation: use column.Semantic (pre-populated during
 			// semantic analysis) to pick a domain-specific generator (name, email,
 			// phone, etc.) before falling back to the type-based generator.
-			if semGen, hasGen := semanticGeneratorFor(column.Semantic); hasGen {
+			if semGen, hasGen := registry.GeneratorFor(column.Semantic); hasGen {
 				value, err := semGen.Generate(&column, rowIndex, rng)
 				if err != nil {
 					return nil, &GenError{
