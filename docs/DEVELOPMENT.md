@@ -74,13 +74,13 @@ synthgraph/
  │   │   └── server/
  │   │       ├── server.go       # Server struct, constructor, route registration, graceful shutdown
  │   │       ├── types.go        # Request/response types (parseRequest, graphResponse, etc.)
- │   │       ├── middleware.go   # Logging, panic recovery, CORS, body size limit
+ │   │       ├── middleware.go   # JSON logging, security headers, CORS, body limit, rate limit, timeout
  │   │       ├── job_store.go    # In-memory job store with optional file persistence
- │   │       ├── helpers.go      # writeJSON, writeError helpers
- │   │       ├── handlers_frontend.go  # Frontend + health + parse handlers
+ │   │       ├── helpers.go      # writeJSON, writeError (structured {code,message} format), decodeJSONBody
+ │   │       ├── handlers_frontend.go  # Frontend + health (version, uptime, goroutines, job count) + parse handlers
  │   │       ├── handlers_graph.go     # Graph + semantic handlers
  │   │       ├── handlers_generate.go  # Generation pipeline + job listing handlers
- │   │       └── server_test.go        # 14 unit tests for handlers, middleware, job store
+ │   │       └── server_test.go        # 41 unit tests for handlers, middleware, job store, SSE, rate limiter
  │   └── serveviz/
  │       ├── main.go            # Lightweight read-only graph visualizer
  │       └── index.html         # Embedded HTML (Cytoscape.js)
@@ -139,12 +139,12 @@ synthgraph/
 │   │   ├── errors.go          # GenError type
 │   │   └── generator_test.go
 │   │
-│   ├── validator/
-│   │   ├── validator.go       # Validate() — constraint verification
-│   │   ├── unique.go          # UNIQUE constraint checker
-│   │   ├── foreign_key.go     # FK constraint checker
-│   │   └── validator_test.go
-│   │
+ │   ├── validator/                  # DEPRECATED — removed, constraint checks moved into generator
+ │   │   ├── validator.go
+ │   │   ├── unique.go
+ │   │   ├── foreign_key.go
+ │   │   └── validator_test.go
+ │   │
 │   └── exporter/
 │       ├── exporter.go        # ExportConfig type
 │       ├── sql.go             # ExportSQL() — INSERT statements
@@ -287,6 +287,9 @@ rtk go test ./internal/planner/ -v -count=1
 
 # Exporters only
 rtk go test ./internal/exporter/ -v -count=1
+
+# Server tests (no CGO required)
+rtk go test ./cmd/synthgraph-web/server/ -v -count=1
 
 # CLI
 rtk go test ./cmd/synthgraph/ -v -count=1
@@ -483,12 +486,13 @@ Then open http://localhost:8080 in your browser.
 
 The SPA walks you through the full SynthGraph pipeline:
 
-| Page | Endpoint | What it does |
-|------|----------|-------------|
-| **Schema** | `POST /api/parse` | Paste or upload SQL DDL, returns parsed model |
-| **Graph** | `POST /api/graph` | Interactive Cytoscape.js graph (fcose layout), shows tables, FK edges, junction highlighting |
-| **Semantic** | `POST /api/semantic` | Table role inference (entity, junction, lookup, transactional, hierarchical) |
-| **Generate** | `POST /api/generate` | Configure rows/seed/format, run generation, download CSV or SQL |
+ | Page | Endpoint | What it does |
+ |------|----------|-------------|
+ | **Schema** | `POST /api/parse` | Paste or upload SQL DDL, returns parsed model |
+ | **Graph** | `POST /api/graph` | Interactive Cytoscape.js graph (fcose layout), shows tables, FK edges, junction highlighting |
+ | **Semantic** | `POST /api/semantic` | Table role inference (entity, junction, lookup, transactional, hierarchical) |
+ | **Generate** | `GET /api/generate/stream` (SSE) | Real-time streaming generation via Server-Sent Events — progress events per stage/table |
+ | **History** | `GET /api/jobs` | Browse past generation jobs (newest first), view data & re-download |
 
 ### Job history
 
@@ -507,6 +511,40 @@ curl -X POST http://localhost:8080/api/graph -H 'Content-Type: application/json'
 
 # Generate (accepts raw SQL + generation config)
 curl -X POST http://localhost:8080/api/generate -H 'Content-Type: application/json' -d '{"input":"CREATE TABLE users (id INT PRIMARY KEY);","rows":10,"seed":42,"format":"csv"}'
+
+# List jobs (summaries, no data)
+curl http://localhost:8080/api/jobs
+
+# Get job detail (includes generated data)
+curl http://localhost:8080/api/jobs/1
+```
+
+### SSE streaming endpoint
+
+`GET /api/generate/stream` streams generation progress via Server-Sent Events:
+
+```
+GET /api/generate/stream?input=CREATE+TABLE...&rows=10&seed=42&format=csv
+```
+
+Events:
+- `stage` — pipeline stage progress (parsing, graphing, semantic, planning, generating, exporting)
+- `progress` — per-table generation progress `{"table":"users","current":1,"total":5}`
+- `complete` — generation finished `{"job_id":1,"tables":5,"data":"...","format":"csv"}`
+- `error` — error message `{"message":"..."}`
+
+Consume from JavaScript:
+```js
+let es = new EventSource('/api/generate/stream?input=...&rows=10');
+es.addEventListener('progress', e => {
+  let p = JSON.parse(e.data);
+  console.log(p.table, p.current, '/', p.total);
+});
+es.addEventListener('complete', e => {
+  es.close();
+  let result = JSON.parse(e.data);
+  console.log('Done:', result.job_id);
+});
 ```
 
 ### Supported output formats

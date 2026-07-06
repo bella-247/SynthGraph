@@ -2,11 +2,15 @@ package server
 
 import (
 	"net/http"
+	"runtime"
 	"strings"
+	"time"
 
 	"synthgraph/internal/parser/postgresql"
 	"synthgraph/internal/schema"
 )
+
+var serverStartTime = time.Now()
 
 // handleFrontend serves the embedded SPA at GET /.
 // Any path other than "/" returns a 404.
@@ -19,10 +23,19 @@ func (serverInstance *Server) handleFrontend(responseWriter http.ResponseWriter,
 	responseWriter.Write([]byte(serverInstance.indexHTML))
 }
 
-// handleHealth returns a simple status check at GET /api/health.
+// handleHealth returns a detailed status check at GET /api/health.
 // Orchestrators (Kubernetes, Nomad) should use this for liveness probes.
+// Returns version, uptime, goroutine count, and job count.
 func (serverInstance *Server) handleHealth(responseWriter http.ResponseWriter, request *http.Request) {
-	writeJSON(responseWriter, http.StatusOK, map[string]string{"status": "ok"})
+	uptime := time.Since(serverStartTime).Truncate(time.Second).String()
+	jobs := serverInstance.jobStore.List()
+	writeJSON(responseWriter, http.StatusOK, map[string]interface{}{
+		"status":   "ok",
+		"version":  "0.1.0",
+		"uptime":   uptime,
+		"goroutines": runtime.NumGoroutine(),
+		"jobs":     len(jobs),
+	})
 }
 
 // handleParse accepts SQL DDL at POST /api/parse and returns the parsed schema.Model.

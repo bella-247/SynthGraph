@@ -11,8 +11,8 @@ const (
 	DefaultPort         = 8080
 	DefaultTimeout      = 10 * time.Minute
 	serverReadTimeout   = 30 * time.Second
-	serverWriteTimeout  = DefaultTimeout + 30*time.Second
-	serverIdleTimeout   = 60 * time.Second
+	serverWriteTimeout  = 0
+	serverIdleTimeout   = 120 * time.Second
 	shutdownGracePeriod = 30 * time.Second
 )
 
@@ -38,17 +38,25 @@ func New(indexHTML string, jobPersistPath string) *Server {
 
 	requestMux := http.NewServeMux()
 	requestMux.HandleFunc("GET /api/jobs", serverInstance.handleListJobs)
+	requestMux.HandleFunc("GET /api/jobs/{id}", serverInstance.handleGetJob)
 	requestMux.HandleFunc("POST /api/parse", serverInstance.handleParse)
 	requestMux.HandleFunc("POST /api/graph", serverInstance.handleGraph)
 	requestMux.HandleFunc("POST /api/semantic", serverInstance.handleSemantic)
 	requestMux.HandleFunc("POST /api/generate", serverInstance.handleGenerate)
+	requestMux.HandleFunc("GET /api/generate/stream", serverInstance.handleGenerateStream)
 	requestMux.HandleFunc("GET /api/health", serverInstance.handleHealth)
 	requestMux.HandleFunc("GET /", serverInstance.handleFrontend)
 
 	wrappedHandler := recoveryMiddleware(
 		requestLoggingMiddleware(
-			corsMiddleware(
-				bodySizeLimitMiddleware(requestMux),
+			securityHeadersMiddleware(
+				corsMiddleware(
+					rateLimitMiddleware(
+						timeoutMiddleware(
+							bodySizeLimitMiddleware(requestMux),
+						),
+					),
+				),
 			),
 		),
 	)
@@ -68,7 +76,7 @@ func (serverInstance *Server) ServeHTTP(responseWriter http.ResponseWriter, requ
 func (serverInstance *Server) ListenAndServe(address string) error {
 	serverInstance.httpServer = &http.Server{
 		Addr:         address,
-		Handler:      http.TimeoutHandler(serverInstance, DefaultTimeout, "request timed out"),
+		Handler:      serverInstance,
 		ReadTimeout:  serverReadTimeout,
 		WriteTimeout: serverWriteTimeout,
 		IdleTimeout:  serverIdleTimeout,

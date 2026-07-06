@@ -1,11 +1,11 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,12 +17,6 @@ import (
 	"synthgraph/internal/schema"
 	"synthgraph/internal/semantic"
 )
-
-func decodeJSONBody(request *http.Request, target interface{}) error {
-	decoder := json.NewDecoder(request.Body)
-	decoder.DisallowUnknownFields()
-	return decoder.Decode(target)
-}
 
 func runGenerationPipeline(rawSQL string, rowCount int, seed int64) (*generator.Dataset, *schema.Model, error) {
 	parsedModel, parseError := postgresql.New().Parse([]byte(rawSQL))
@@ -159,6 +153,32 @@ func (server *Server) handleGenerate(responseWriter http.ResponseWriter, request
 func (server *Server) handleListJobs(responseWriter http.ResponseWriter, request *http.Request) {
 	summaries := server.jobStore.List()
 	writeJSON(responseWriter, http.StatusOK, summaries)
+}
+
+func (server *Server) handleGetJob(responseWriter http.ResponseWriter, request *http.Request) {
+	jobIDString := request.PathValue("id")
+	jobID, parseError := strconv.Atoi(jobIDString)
+	if parseError != nil {
+		writeError(responseWriter, http.StatusBadRequest, "invalid job ID: %s", jobIDString)
+		return
+	}
+
+	job := server.jobStore.GetByID(jobID)
+	if job == nil {
+		writeError(responseWriter, http.StatusNotFound, "job %d not found", jobID)
+		return
+	}
+
+	writeJSON(responseWriter, http.StatusOK, &jobDetail{
+		ID:     job.ID,
+		Status: job.Status,
+		Created: job.Created,
+		Config: job.Config,
+		Tables: job.Tables,
+		Errors: job.Errors,
+		Data:   string(job.Data),
+		Format: job.Format,
+	})
 }
 
 func (server *Server) identifyJunctionTables(graphInstance *graph.Graph) map[string]bool {

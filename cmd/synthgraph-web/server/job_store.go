@@ -8,14 +8,14 @@ import (
 )
 
 type Job struct {
-	ID      int              `json:"id"`
-	Status  string           `json:"status"`
-	Created time.Time        `json:"created"`
+	ID      int               `json:"id"`
+	Status  string            `json:"status"`
+	Created time.Time         `json:"created"`
 	Config  generationRequest `json:"config"`
-	Tables  int              `json:"tables"`
-	Errors  []string         `json:"errors,omitempty"`
-	Data    []byte           `json:"-"`
-	Format  string           `json:"format"`
+	Tables  int               `json:"tables"`
+	Errors  []string          `json:"errors,omitempty"`
+	Data    []byte            `json:"-"`
+	Format  string            `json:"format"`
 }
 
 type jobSummary struct {
@@ -26,6 +26,17 @@ type jobSummary struct {
 	Format  string    `json:"format"`
 	Rows    int       `json:"rows"`
 	Errors  []string  `json:"errors,omitempty"`
+}
+
+type jobDetail struct {
+	ID      int               `json:"id"`
+	Status  string            `json:"status"`
+	Created time.Time         `json:"created"`
+	Config  generationRequest `json:"config"`
+	Tables  int               `json:"tables"`
+	Errors  []string          `json:"errors,omitempty"`
+	Data    string            `json:"data"`
+	Format  string            `json:"format"`
 }
 
 type JobStore struct {
@@ -81,6 +92,17 @@ func (jobStore *JobStore) List() []jobSummary {
 	}
 	reverseSlice(summaries)
 	return summaries
+}
+
+func (jobStore *JobStore) GetByID(id int) *Job {
+	jobStore.mu.Lock()
+	defer jobStore.mu.Unlock()
+	for _, job := range jobStore.jobs {
+		if job.ID == id {
+			return job
+		}
+	}
+	return nil
 }
 
 func reverseSlice[T any](slice []T) {
