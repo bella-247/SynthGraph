@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
-	"strings"
 
 	"synthgraph/internal/schema"
 )
@@ -14,8 +13,8 @@ type serialGenerator struct {
 	start int64
 }
 
-func (generator serialGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
-	return generator.start + int64(rowIndex), nil
+func (g serialGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
+	return g.start + int64(rowIndex), nil
 }
 
 // intGenerator generates random integer values.
@@ -24,114 +23,47 @@ type intGenerator struct {
 	max int64
 }
 
-func (generator intGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
-	if generator.max <= generator.min {
-		return generator.min, nil
+func (g intGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
+	if g.max <= g.min {
+		return g.min, nil
 	}
-	rangeSize := generator.max - generator.min + 1
+	rangeSize := g.max - g.min + 1
 	if rangeSize > math.MaxInt64 {
-		value := generator.min + int64(rng.Uint64()%uint64(rangeSize))
+		value := g.min + int64(rng.Uint64()%uint64(rangeSize))
 		return value, nil
 	}
-	value := generator.min + rng.Int64N(rangeSize)
+	value := g.min + rng.Int64N(rangeSize)
 	return value, nil
-}
-
-// nameGenerator generates realistic-looking names.
-type nameGenerator struct {
-	isFirstName bool
-}
-
-func (generator nameGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
-	if generator.isFirstName {
-		return randomFirstName(rng), nil
-	}
-	return randomFirstName(rng) + " " + randomLastName(rng), nil
-}
-
-// emailGenerator generates realistic-looking email addresses.
-type emailGenerator struct{}
-
-func (generator emailGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
-	name := strings.ToLower(randomFirstName(rng))
-	domain := emailDomains[rng.IntN(len(emailDomains))]
-	return fmt.Sprintf("%s%d@%s", name, rng.IntN(999)+1, domain), nil
-}
-
-// stringGenerator generates random string values with realistic content.
-type stringGenerator struct{}
-
-func (generator stringGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
-	maxLen := column.Length
-	if maxLen <= 0 {
-		maxLen = 50
-	}
-
-	colLower := strings.ToLower(column.Name)
-	switch {
-	case strings.Contains(colLower, "first") && strings.Contains(colLower, "name"):
-		return randomFirstName(rng), nil
-	case strings.Contains(colLower, "last") && strings.Contains(colLower, "name"):
-		return randomLastName(rng), nil
-	case colLower == "name" || colLower == "full_name":
-		return randomFirstName(rng) + " " + randomLastName(rng), nil
-	case strings.Contains(colLower, "email"):
-		name := strings.ToLower(randomFirstName(rng))
-		domain := emailDomains[rng.IntN(len(emailDomains))]
-		return fmt.Sprintf("%s%d@%s", name, rng.IntN(999)+1, domain), nil
-	case strings.Contains(colLower, "phone") || strings.Contains(colLower, "tel"):
-		return randomPhone(rng), nil
-	case strings.Contains(colLower, "address") || strings.Contains(colLower, "street"):
-		return randomAddress(rng), nil
-	case strings.Contains(colLower, "city"):
-		return cities[rng.IntN(len(cities))], nil
-	case strings.Contains(colLower, "country"):
-		return countries[rng.IntN(len(countries))], nil
-	case strings.Contains(colLower, "state") || strings.Contains(colLower, "province"):
-		return states[rng.IntN(len(states))], nil
-	case strings.Contains(colLower, "zip") || strings.Contains(colLower, "postal"):
-		return fmt.Sprintf("%05d", rng.IntN(90000)+10000), nil
-	case strings.Contains(colLower, "url") || strings.Contains(colLower, "website"):
-		words := []string{"example", "demo", "test", "sample", "app"}
-		return "https://www." + words[rng.IntN(len(words))] + ".com/" + randomString(8, rng), nil
-	case strings.Contains(colLower, "description") || strings.Contains(colLower, "comment"):
-		return randomSentence(rng, maxLen), nil
-	case strings.Contains(colLower, "title") || strings.Contains(colLower, "subject"):
-		return randomTitle(rng, maxLen), nil
-	case strings.Contains(colLower, "status"):
-		statuses := []string{"active", "inactive", "pending", "archived"}
-		return statuses[rng.IntN(len(statuses))], nil
-	case strings.Contains(colLower, "color"):
-		colors := []string{"red", "blue", "green", "black", "white", "yellow"}
-		return colors[rng.IntN(len(colors))], nil
-	case strings.Contains(colLower, "category") || strings.Contains(colLower, "type"):
-		categories := []string{"A", "B", "C", "Premium", "Standard", "Basic"}
-		return categories[rng.IntN(len(categories))], nil
-	case strings.Contains(colLower, "code") || strings.Contains(colLower, "sku"):
-		return randomCode(rng), nil
-	case strings.Contains(colLower, "slug"):
-		return randomSlug(rng), nil
-	default:
-		length := rng.IntN(maxLen) + 1
-		if length < 1 {
-			length = 1
-		}
-		return randomString(length, rng), nil
-	}
 }
 
 // uuidGenerator generates random UUID v4 strings.
 type uuidGenerator struct{}
 
-func (generator uuidGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
+func (uuidGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
 	return generateUUID(rng), nil
 }
 
 // boolGenerator generates random boolean values.
 type boolGenerator struct{}
 
-func (generator boolGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
+func (boolGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
 	return rng.IntN(2) == 0, nil
+}
+
+// stringGenerator generates random alphanumeric strings.
+// Semantic-aware generation (names, emails, etc.) is handled by semantic.go.
+type stringGenerator struct{}
+
+func (stringGenerator) Generate(column *schema.Column, rowIndex int, rng *rand.Rand) (any, error) {
+	maxLen := column.Length
+	if maxLen <= 0 {
+		maxLen = 50
+	}
+	length := rng.IntN(maxLen) + 1
+	if length < 1 {
+		length = 1
+	}
+	return randomString(length, rng), nil
 }
 
 // ── Enum and unknown generators ───────────────────────────────────────────
@@ -158,116 +90,4 @@ func unknownTypeGenerator(typeName string) TypeGenerator {
 		}
 		return fmt.Sprintf("<%s:%s>", typeName, randomString(length, rng)), nil
 	})
-}
-
-// ── Realistic data helpers ────────────────────────────────────────────────
-
-func randomFirstName(rng *rand.Rand) string {
-	return firstNames[rng.IntN(len(firstNames))]
-}
-
-func randomLastName(rng *rand.Rand) string {
-	return lastNames[rng.IntN(len(lastNames))]
-}
-
-func randomPhone(rng *rand.Rand) string {
-	area := rng.IntN(800) + 200
-	prefix := rng.IntN(1000)
-	line := rng.IntN(10000)
-	return fmt.Sprintf("(%d) %03d-%04d", area, prefix, line)
-}
-
-func randomAddress(rng *rand.Rand) string {
-	number := rng.IntN(9999) + 1
-	streets := []string{"Main St", "Oak Ave", "Elm St", "Park Blvd", "Broadway", "Lake Dr", "Cedar Ln", "Maple Rd"}
-	return fmt.Sprintf("%d %s", number, streets[rng.IntN(len(streets))])
-}
-
-func randomSentence(rng *rand.Rand, maxLen int) string {
-	words := []string{"lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "elit", "sed", "do", "eiusmod", "tempor", "incididunt", "ut", "labore", "et", "dolore", "magna", "aliqua", "enim", "ad", "minim", "veniam", "quis", "nostrud", "exercitation", "ullamco", "laboris", "nisi", "aliquip"}
-	var result []string
-	wordCount := rng.IntN(10) + 3
-	for i := 0; i < wordCount; i++ {
-		result = append(result, words[rng.IntN(len(words))])
-	}
-	sentence := strings.Join(result, " ")
-	if len(sentence) > maxLen {
-		sentence = sentence[:maxLen]
-	}
-	return sentence
-}
-
-func randomTitle(rng *rand.Rand, maxLen int) string {
-	prefixes := []string{"Analysis of", "Report on", "Study of", "Update for", "Summary of"}
-	subjects := []string{"Q4 Performance", "User Growth", "Revenue", "Traffic", "Conversion", "Retention", "Satisfaction"}
-	title := prefixes[rng.IntN(len(prefixes))] + " " + subjects[rng.IntN(len(subjects))]
-	if len(title) > maxLen {
-		title = title[:maxLen]
-	}
-	return title
-}
-
-func randomCode(rng *rand.Rand) string {
-	letters := randomString(3, rng)
-	digits := rng.IntN(10000)
-	return strings.ToUpper(letters) + fmt.Sprintf("%04d", digits)
-}
-
-func randomSlug(rng *rand.Rand) string {
-	words := []string{"hello", "world", "foo", "bar", "demo", "test", "sample", "app", "user", "admin"}
-	count := rng.IntN(3) + 1
-	parts := make([]string, count)
-	for i := 0; i < count; i++ {
-		parts[i] = words[rng.IntN(len(words))]
-	}
-	return strings.Join(parts, "-")
-}
-
-// ── Word lists ────────────────────────────────────────────────────────────
-
-var firstNames = []string{
-	"James", "Mary", "John", "Patricia", "Robert", "Jennifer", "Michael", "Linda",
-	"David", "Elizabeth", "William", "Barbara", "Richard", "Susan", "Joseph", "Jessica",
-	"Thomas", "Sarah", "Christopher", "Karen", "Charles", "Lisa", "Daniel", "Nancy",
-	"Matthew", "Betty", "Anthony", "Margaret", "Mark", "Sandra", "Donald", "Ashley",
-	"Steven", "Kimberly", "Paul", "Emily", "Andrew", "Donna", "Joshua", "Michelle",
-	"Kenneth", "Carol", "Kevin", "Amanda", "Brian", "Dorothy", "George", "Melissa",
-	"Timothy", "Deborah", "Ronald", "Stephanie", "Edward", "Rebecca", "Jason", "Sharon",
-	"Jeffrey", "Laura", "Ryan", "Cynthia", "Jacob", "Kathleen", "Gary", "Amy",
-}
-
-var lastNames = []string{
-	"Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis",
-	"Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson",
-	"Thomas", "Taylor", "Moore", "Jackson", "Martin", "Lee", "Perez", "Thompson",
-	"White", "Harris", "Sanchez", "Clark", "Ramirez", "Lewis", "Robinson", "Walker",
-	"Young", "Allen", "King", "Wright", "Scott", "Torres", "Nguyen", "Hill",
-	"Flores", "Green", "Adams", "Nelson", "Baker", "Hall", "Rivera", "Campbell",
-	"Mitchell", "Carter", "Roberts", "Gomez", "Phillips", "Evans", "Turner", "Diaz",
-}
-
-var emailDomains = []string{
-	"gmail.com", "yahoo.com", "outlook.com", "icloud.com", "proton.me",
-	"example.com", "mail.com", "fastmail.com", "zoho.com", "aol.com",
-}
-
-var cities = []string{
-	"New York", "Los Angeles", "Chicago", "Houston", "Phoenix", "Philadelphia",
-	"San Antonio", "San Diego", "Dallas", "San Jose", "Austin", "Jacksonville",
-	"Fort Worth", "Columbus", "Charlotte", "Indianapolis", "San Francisco",
-	"Seattle", "Denver", "Nashville", "Portland", "Miami", "Atlanta", "Boston",
-}
-
-var countries = []string{
-	"United States", "Canada", "United Kingdom", "Germany", "France", "Japan",
-	"Australia", "Brazil", "India", "China", "Mexico", "Spain", "Italy",
-	"Netherlands", "Sweden", "Norway", "Denmark", "Finland", "Ireland",
-}
-
-var states = []string{
-	"California", "Texas", "Florida", "New York", "Illinois", "Pennsylvania",
-	"Ohio", "Georgia", "North Carolina", "Michigan", "New Jersey", "Virginia",
-	"Washington", "Arizona", "Massachusetts", "Tennessee", "Indiana", "Missouri",
-	"Maryland", "Wisconsin", "Colorado", "Minnesota", "South Carolina", "Alabama",
-	"Louisiana", "Kentucky", "Oregon", "Oklahoma", "Connecticut", "Utah",
 }

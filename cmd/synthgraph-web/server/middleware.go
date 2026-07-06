@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
-	"sync"
 	"time"
 )
 
@@ -82,7 +81,11 @@ func requestLoggingMiddleware(next http.Handler) http.Handler {
 			Duration:   duration.String(),
 			RequestID:  requestID,
 		}
-		encoded, _ := json.Marshal(entry)
+		encoded, marshalError := json.Marshal(entry)
+		if marshalError != nil {
+			log.Printf("failed to marshal log entry: %v", marshalError)
+			return
+		}
 		log.Println(string(encoded))
 	})
 }
@@ -138,81 +141,6 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 		responseWriter.Header().Set("X-Frame-Options", "DENY")
 		responseWriter.Header().Set("X-XSS-Protection", "0")
 		responseWriter.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		next.ServeHTTP(responseWriter, request)
-	})
-}
-
-type rateLimiter struct {
-	mu        sync.Mutex
-	visitors  map[string]*visitorEntry
-	rate      int
-	window    time.Duration
-	cleanupInterval time.Duration
-}
-
-type visitorEntry struct {
-	count    int
-	windowStart time.Time
-}
-
-func newRateLimiter(rate int, window time.Duration) *rateLimiter {
-	limiter := &rateLimiter{
-		visitors:  make(map[string]*visitorEntry),
-		rate:      rate,
-		window:    window,
-		cleanupInterval: window * 10,
-	}
-	go limiter.periodicCleanup()
-	return limiter
-}
-
-func (limiter *rateLimiter) allow(visitorKey string) bool {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-
-	entry, exists := limiter.visitors[visitorKey]
-	now := time.Now()
-
-	if !exists || now.Sub(entry.windowStart) > limiter.window {
-		limiter.visitors[visitorKey] = &visitorEntry{
-			count:       1,
-			windowStart: now,
-		}
-		return true
-	}
-
-	if entry.count >= limiter.rate {
-		return false
-	}
-
-	entry.count++
-	return true
-}
-
-func (limiter *rateLimiter) periodicCleanup() {
-	for {
-		time.Sleep(limiter.cleanupInterval)
-		limiter.mu.Lock()
-		now := time.Now()
-		for visitorKey, entry := range limiter.visitors {
-			if now.Sub(entry.windowStart) > limiter.window {
-				delete(limiter.visitors, visitorKey)
-			}
-		}
-		limiter.mu.Unlock()
-	}
-}
-
-var globalRateLimiter = newRateLimiter(60, 1*time.Minute)
-
-func rateLimitMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
-		visitorKey := request.RemoteAddr
-		if !globalRateLimiter.allow(visitorKey) {
-			responseWriter.Header().Set("Retry-After", "60")
-			writeError(responseWriter, http.StatusTooManyRequests, "rate limit exceeded, try again later")
-			return
-		}
 		next.ServeHTTP(responseWriter, request)
 	})
 }

@@ -31,22 +31,22 @@ func New(indexHTML string, jobPersistPath string) *Server {
 		jobStore = NewJobStore()
 	}
 
-	serverInstance := &Server{
+	server := &Server{
 		jobStore:  jobStore,
 		indexHTML: indexHTML,
 	}
 
 	requestMux := http.NewServeMux()
-	requestMux.HandleFunc("GET /api/jobs", serverInstance.handleListJobs)
-	requestMux.HandleFunc("GET /api/jobs/{id}", serverInstance.handleGetJob)
-	requestMux.HandleFunc("DELETE /api/jobs/{id}", serverInstance.handleDeleteJob)
-	requestMux.HandleFunc("POST /api/parse", serverInstance.handleParse)
-	requestMux.HandleFunc("POST /api/graph", serverInstance.handleGraph)
-	requestMux.HandleFunc("POST /api/semantic", serverInstance.handleSemantic)
-	requestMux.HandleFunc("POST /api/generate", serverInstance.handleGenerate)
-	requestMux.HandleFunc("GET /api/generate/stream", serverInstance.handleGenerateStream)
-	requestMux.HandleFunc("GET /api/health", serverInstance.handleHealth)
-	requestMux.HandleFunc("GET /", serverInstance.handleFrontend)
+	requestMux.HandleFunc("GET /api/jobs", server.handleListJobs)
+	requestMux.HandleFunc("GET /api/jobs/{id}", server.handleGetJob)
+	requestMux.HandleFunc("DELETE /api/jobs/{id}", server.handleDeleteJob)
+	requestMux.HandleFunc("POST /api/parse", server.handleParse)
+	requestMux.HandleFunc("POST /api/graph", server.handleGraph)
+	requestMux.HandleFunc("POST /api/semantic", server.handleSemantic)
+	requestMux.HandleFunc("POST /api/generate", server.handleGenerate)
+	requestMux.HandleFunc("GET /api/generate/stream", server.handleGenerateStream)
+	requestMux.HandleFunc("GET /api/health", server.handleHealth)
+	requestMux.HandleFunc("GET /", server.handleFrontend)
 
 	wrappedHandler := recoveryMiddleware(
 		requestLoggingMiddleware(
@@ -62,33 +62,33 @@ func New(indexHTML string, jobPersistPath string) *Server {
 		),
 	)
 
-	serverInstance.handler = wrappedHandler
-	return serverInstance
+	server.handler = wrappedHandler
+	return server
 }
 
-func (serverInstance *Server) Handler() http.Handler {
-	return serverInstance.handler
+func (server *Server) Handler() http.Handler {
+	return server.handler
 }
 
-func (serverInstance *Server) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
-	serverInstance.handler.ServeHTTP(responseWriter, request)
+func (server *Server) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
+	server.handler.ServeHTTP(responseWriter, request)
 }
 
-func (serverInstance *Server) ListenAndServe(address string) error {
-	serverInstance.httpServer = &http.Server{
+func (server *Server) ListenAndServe(address string) error {
+	server.httpServer = &http.Server{
 		Addr:         address,
-		Handler:      serverInstance,
+		Handler:      server,
 		ReadTimeout:  serverReadTimeout,
 		WriteTimeout: serverWriteTimeout,
 		IdleTimeout:  serverIdleTimeout,
 	}
 	log.Printf("synthgraph-web running at http://localhost%s", address)
-	return serverInstance.httpServer.ListenAndServe()
+	return server.httpServer.ListenAndServe()
 }
 
-func (serverInstance *Server) Shutdown() error {
+func (server *Server) Shutdown() error {
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownGracePeriod)
 	defer cancel()
 	log.Print("shutting down server...")
-	return serverInstance.httpServer.Shutdown(ctx)
+	return server.httpServer.Shutdown(ctx)
 }

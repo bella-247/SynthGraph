@@ -40,12 +40,3 @@ func (tracker *uniqueTracker) record(column string, value any) {
 	}
 	tracker.seen[column][value] = true
 }
-
-func isPrimaryKeyColumn(columnName string, pk []string) bool {
-	for _, pkCol := range pk {
-		if pkCol == columnName {
-			return true
-		}
-	}
-	return false
-}

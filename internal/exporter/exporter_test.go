@@ -18,6 +18,7 @@ func buildDataset(t *testing.T, model *schema.Model) *generator.Dataset {
 	if err != nil {
 		t.Fatalf("graph.Build: %v", err)
 	}
+	semantic.ResolveColumns(model)
 	semanticGraph, err := semantic.Build(schemaGraph)
 	if err != nil {
 		t.Fatalf("semantic.Build: %v", err)

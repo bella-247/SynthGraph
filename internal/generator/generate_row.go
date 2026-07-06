@@ -7,6 +7,10 @@ import (
 	"synthgraph/internal/planner"
 )
 
+const maxUniqueRetries = 100
+
+const placeholderValue = "PLACEHOLDER"
+
 // generateTable generates all rows for a single table from the plan.
 func generateTable(
 	tablePlan planner.TablePlan,
@@ -59,7 +63,24 @@ func generateTable(
 				continue
 			}
 
-			// Regular column: generate from type generator.
+			// Semantic-aware generation: use column.Semantic (pre-populated during
+			// semantic analysis) to pick a domain-specific generator (name, email,
+			// phone, etc.) before falling back to the type-based generator.
+			if semGen, hasGen := semanticGeneratorFor(column.Semantic); hasGen {
+				value, err := semGen.Generate(&column, rowIndex, rng)
+				if err != nil {
+					return nil, &GenError{
+						Table:   tableName,
+						Row:     rowIndex,
+						Column:  column.Name,
+						Message: err.Error(),
+					}
+				}
+				row[column.Name] = value
+				continue
+			}
+
+			// Type-based fallback: generate from the column's database type.
 			generator := typeGeneratorFor(column.Type, ctx.Model, enumValues)
 			value, err := generator.Generate(&column, rowIndex, rng)
 			if err != nil {
@@ -71,9 +92,16 @@ func generateTable(
 				}
 			}
 
+			// Length constraint: truncate string values that exceed column length.
+			// Decimal types are excluded — Length represents total digit count, not string length.
+			if strVal, ok := value.(string); ok && column.Length > 0 && len(strVal) > column.Length {
+				if column.Type != "decimal" && column.Type != "numeric" {
+					value = strVal[:column.Length]
+				}
+			}
+
 			// Retry on UNIQUE violation.
 			if tracker.isUniqueColumn(column.Name) {
-				const maxUniqueRetries = 100
 				for attempts := 0; attempts < maxUniqueRetries; attempts++ {
 					if !tracker.checkSeen(column.Name, value) {
 						break
@@ -94,12 +122,10 @@ func generateTable(
 			// NOT NULL safeguard: if the value is nil and the column is NOT NULL,
 			// generate a placeholder to avoid constraint violations.
 			if value == nil && !column.Nullable {
-				colLower := column.Name
-				switch {
-				case colLower == "id":
+				if column.Name == "id" {
 					value = int64(0)
-				default:
-					value = "PLACEHOLDER"
+				} else {
+					value = placeholderValue
 				}
 			}
 

@@ -12,7 +12,8 @@ import "synthgraph/internal/graph"
 // Returns:
 //   - ordered: table node IDs in valid generation order
 //   - unresolved: table node IDs that never reached count 0 (cycles + blocked)
-func topologicalSort(schemaGraph *graph.Graph, tableNodes map[string]*graph.Node) (ordered, unresolved []string) {
+func topologicalSort(schemaGraph *graph.Graph, tableNodes map[string]*graph.Node) ([]string, []string) {
+	var ordered, unresolved []string
 	outCount := make(map[string]int, len(tableNodes))
 	for nodeID := range tableNodes {
 		outCount[nodeID] = 0

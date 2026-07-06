@@ -31,15 +31,41 @@ type Table struct {
 	Checks      []CheckConstraint `json:"checks,omitempty"`
 }
 
+// SemanticType classifies a column by its business meaning, inferred from its name.
+type SemanticType string
+
+const (
+	SemanticNone        SemanticType = ""
+	SemanticFirstName   SemanticType = "first_name"
+	SemanticLastName    SemanticType = "last_name"
+	SemanticFullName    SemanticType = "full_name"
+	SemanticEmail       SemanticType = "email"
+	SemanticPhone       SemanticType = "phone"
+	SemanticAddress     SemanticType = "address"
+	SemanticCity        SemanticType = "city"
+	SemanticCountry     SemanticType = "country"
+	SemanticState       SemanticType = "state"
+	SemanticZip         SemanticType = "zip"
+	SemanticURL         SemanticType = "url"
+	SemanticDescription SemanticType = "description"
+	SemanticTitle       SemanticType = "title"
+	SemanticStatus      SemanticType = "status"
+	SemanticColor       SemanticType = "color"
+	SemanticCategory    SemanticType = "category"
+	SemanticCode        SemanticType = "code"
+	SemanticSlug        SemanticType = "slug"
+)
+
 // Column represents a single column in a table.
 type Column struct {
-	Name         string  `json:"name"`
-	Type         string  `json:"type"`
-	Length       int     `json:"length,omitempty"`    // for VARCHAR(n), DECIMAL(p,s)
-	Precision    int     `json:"precision,omitempty"` // for DECIMAL(p,s)
-	Nullable     bool    `json:"nullable"`
-	Default      *string `json:"default,omitempty"`
-	IsPrimaryKey bool    `json:"is_primary_key"`
+	Name         string       `json:"name"`
+	Type         string       `json:"type"`
+	Length       int          `json:"length,omitempty"`    // for VARCHAR(n), DECIMAL(p,s)
+	Precision    int          `json:"precision,omitempty"` // for DECIMAL(p,s)
+	Nullable     bool         `json:"nullable"`
+	Default      *string      `json:"default,omitempty"`
+	IsPrimaryKey bool         `json:"is_primary_key"`
+	Semantic     SemanticType `json:"semantic,omitempty"`
 }
 
 // CheckConstraint represents a single CHECK constraint on a table.

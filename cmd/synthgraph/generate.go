@@ -191,6 +191,8 @@ func generateData(ctx context.Context, model *schema.Model, config *generateConf
 		return nil, fmt.Errorf("building graph: %w", err)
 	}
 
+	semantic.ResolveColumns(model)
+
 	sg, err := semantic.Build(g)
 	if err != nil {
 		return nil, fmt.Errorf("building semantic graph: %w", err)
