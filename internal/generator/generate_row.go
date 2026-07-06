@@ -40,7 +40,16 @@ func generateTable(
 	for rowIndex := 0; rowIndex < rowCount; rowIndex++ {
 		row := make(GeneratedRow, len(table.Columns))
 
+		// Phase 0: Pre-compute cross-column correlated values for this row
+		// (e.g. city/state/zip consistency, first/last/full_name consistency).
+		rowValues := precomputeRowValues(table, rng)
+
 		for _, column := range table.Columns {
+			// Use pre-computed correlated values if available.
+			if val, ok := rowValues[column.Name]; ok {
+				row[column.Name] = val
+				continue
+			}
 			// Deferred FK columns: insert as NULL.
 			if deferredCols[column.Name] {
 				row[column.Name] = nil
