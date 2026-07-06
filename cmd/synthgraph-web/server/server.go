@@ -39,6 +39,7 @@ func New(indexHTML string, jobPersistPath string) *Server {
 	requestMux := http.NewServeMux()
 	requestMux.HandleFunc("GET /api/jobs", serverInstance.handleListJobs)
 	requestMux.HandleFunc("GET /api/jobs/{id}", serverInstance.handleGetJob)
+	requestMux.HandleFunc("DELETE /api/jobs/{id}", serverInstance.handleDeleteJob)
 	requestMux.HandleFunc("POST /api/parse", serverInstance.handleParse)
 	requestMux.HandleFunc("POST /api/graph", serverInstance.handleGraph)
 	requestMux.HandleFunc("POST /api/semantic", serverInstance.handleSemantic)

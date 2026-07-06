@@ -62,6 +62,13 @@ type GeneratedRow map[string]any
 
 // ── Configuration ─────────────────────────────────────────────────────────
 
+// ProgressCallback is an optional hook that the generator calls after each table
+// is fully generated. tableName is the table just completed, current is the
+// 1-based index of that table, and total is the total number of tables in the plan.
+// The callback MUST be safe to call concurrently (the generator calls it
+// synchronously from a single goroutine).
+type ProgressCallback func(tableName string, current int, total int)
+
 // GenerationContext carries all configuration and reference data needed by the
 // generator. It is constructed once and shared across all table generators.
 type GenerationContext struct {
@@ -69,6 +76,10 @@ type GenerationContext struct {
 	// the current table and returns partial results. If nil, no cancellation
 	// is performed (backward compatible default).
 	Context context.Context
+
+	// Progress is an optional callback invoked after each table is generated.
+	// It is called synchronously from the generator's single goroutine.
+	Progress ProgressCallback
 
 	// GlobalSeed is the master seed for the entire generation run.
 	// Every table derives its own deterministic seed from this value.

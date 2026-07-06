@@ -181,6 +181,22 @@ func (server *Server) handleGetJob(responseWriter http.ResponseWriter, request *
 	})
 }
 
+func (server *Server) handleDeleteJob(responseWriter http.ResponseWriter, request *http.Request) {
+	jobIDString := request.PathValue("id")
+	jobID, parseError := strconv.Atoi(jobIDString)
+	if parseError != nil {
+		writeError(responseWriter, http.StatusBadRequest, "invalid job ID: %s", jobIDString)
+		return
+	}
+
+	if !server.jobStore.Delete(jobID) {
+		writeError(responseWriter, http.StatusNotFound, "job %d not found", jobID)
+		return
+	}
+
+	writeJSON(responseWriter, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
 func (server *Server) identifyJunctionTables(graphInstance *graph.Graph) map[string]bool {
 	junctionTables := make(map[string]bool)
 	for _, graphEdge := range graphInstance.Edges {

@@ -105,6 +105,30 @@ func (jobStore *JobStore) GetByID(id int) *Job {
 	return nil
 }
 
+func (jobStore *JobStore) Delete(id int) bool {
+	jobStore.mu.Lock()
+	defer jobStore.mu.Unlock()
+	for index, job := range jobStore.jobs {
+		if job.ID == id {
+			jobStore.jobs = append(jobStore.jobs[:index], jobStore.jobs[index+1:]...)
+			if jobStore.persistPath != "" {
+				jobStore.rewriteDisk()
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func (jobStore *JobStore) rewriteDisk() {
+	file, openError := os.Create(jobStore.persistPath)
+	if openError != nil {
+		return
+	}
+	defer file.Close()
+	json.NewEncoder(file).Encode(jobStore.jobs)
+}
+
 func reverseSlice[T any](slice []T) {
 	for left, right := 0, len(slice)-1; left < right; left, right = left+1, right-1 {
 		slice[left], slice[right] = slice[right], slice[left]
