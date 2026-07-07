@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"encoding/binary"
 	"fmt"
 	"hash/fnv"
 	"math/rand/v2"
@@ -26,9 +27,8 @@ func newTableRNG(globalSeed uint64, tableName string) *rand.Rand {
 // generateUUID produces a random UUID v4 string using the given RNG.
 func generateUUID(rng *rand.Rand) string {
 	var buffer [16]byte
-	for index := range buffer {
-		buffer[index] = byte(rng.Uint32() & 0xFF)
-	}
+	binary.LittleEndian.PutUint64(buffer[0:8], rng.Uint64())
+	binary.LittleEndian.PutUint64(buffer[8:16], rng.Uint64())
 
 	// Set version 4 (random) — RFC 4122, section 4.4.
 	buffer[6] = (buffer[6] & 0x0f) | 0x40
