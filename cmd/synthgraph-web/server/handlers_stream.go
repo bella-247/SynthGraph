@@ -72,7 +72,7 @@ func (stream *streamState) sendError(message string) {
 //	event: stage     data: {"stage":"exporting","status":"done"}
 //	event: complete  data: {"job_id":1,"tables":5,"data":"...","format":"csv"}
 //	event: error     data: {"message":"parse error: ..."}
-func (serverInstance *Server) handleGenerateStream(responseWriter http.ResponseWriter, request *http.Request) {
+func (server *Server) handleGenerateStream(responseWriter http.ResponseWriter, request *http.Request) {
 	responseWriter.Header().Set("Content-Type", "text/event-stream")
 	responseWriter.Header().Set("Cache-Control", "no-cache")
 	responseWriter.Header().Set("Connection", "keep-alive")
@@ -84,8 +84,14 @@ func (serverInstance *Server) handleGenerateStream(responseWriter http.ResponseW
 	}
 
 	rawSQL := request.URL.Query().Get("input")
-	rowCount, _ := strconv.Atoi(request.URL.Query().Get("rows"))
-	seed, _ := strconv.ParseInt(request.URL.Query().Get("seed"), 10, 64)
+	rowCount, err := strconv.Atoi(request.URL.Query().Get("rows"))
+	if err != nil {
+		log.Printf("invalid rows parameter %q, defaulting to 10", request.URL.Query().Get("rows"))
+	}
+	seed, err := strconv.ParseInt(request.URL.Query().Get("seed"), 10, 64)
+	if err != nil {
+		log.Printf("invalid seed parameter %q, defaulting to 0", request.URL.Query().Get("seed"))
+	}
 	outputFormat := request.URL.Query().Get("format")
 	schemaName := request.URL.Query().Get("schema_name")
 
@@ -102,6 +108,27 @@ func (serverInstance *Server) handleGenerateStream(responseWriter http.ResponseW
 	}
 	if outputFormat == "" {
 		outputFormat = "csv"
+	}
+
+	// Compute a fingerprint so reconnecting EventSource clients
+	// get the cached result instead of re-running the pipeline.
+	reqKey := generationFingerprint(rawSQL, rowCount, seed, outputFormat, schemaName)
+	if cached := server.getCachedStreamResult(reqKey); cached != nil {
+		log.Printf("serving cached stream result for key=%s (job %d)", reqKey[:12], cached.jobID)
+		stream.sendEvent("stage", map[string]string{"stage": "parsing", "status": "done"})
+		stream.sendEvent("stage", map[string]string{"stage": "graphing", "status": "done"})
+		stream.sendEvent("stage", map[string]string{"stage": "semantic", "status": "done"})
+		stream.sendEvent("stage", map[string]string{"stage": "planning", "status": "done"})
+		stream.sendEvent("stage", map[string]string{"stage": "generating", "status": "done"})
+		stream.sendEvent("stage", map[string]string{"stage": "exporting", "status": "done"})
+		stream.sendEvent("complete", map[string]interface{}{
+			"job_id": cached.jobID,
+			"tables": cached.tables,
+			"errors": cached.errors,
+			"data":   string(cached.data),
+			"format": cached.format,
+		})
+		return
 	}
 
 	requestContext := request.Context()
@@ -134,6 +161,8 @@ func (serverInstance *Server) handleGenerateStream(responseWriter http.ResponseW
 	}
 
 	stream.sendEvent("stage", map[string]string{"stage": "semantic", "status": "processing"})
+	semantic.ResolveColumns(parsedModel)
+
 	semanticGraph, semanticError := semantic.Build(graphInstance)
 	if semanticError != nil {
 		stream.sendError(fmt.Sprintf("semantic build error: %v", semanticError))
@@ -233,7 +262,17 @@ func (serverInstance *Server) handleGenerateStream(responseWriter http.ResponseW
 		Data:   exportedData,
 		Format: outputFormat,
 	}
-	serverInstance.jobStore.Add(job)
+	server.jobStore.Add(job)
+
+	// Cache the result for reconnecting EventSource clients.
+	server.cacheStreamResult(reqKey, &streamCacheEntry{
+		jobID:   job.ID,
+		tables:  len(dataset.Tables),
+		errors:  partialErrors,
+		data:    exportedData,
+		format:  outputFormat,
+		expires: time.Now().Add(streamCacheTTL),
+	})
 
 	stream.sendEvent("complete", map[string]interface{}{
 		"job_id": job.ID,

@@ -20,6 +20,8 @@ func setupGeneratorTest(t *testing.T, model *schema.Model) (*GenerationContext, 
 		t.Fatalf("graph.Build failed: %v", err)
 	}
 
+	semantic.ResolveColumns(model)
+
 	sg, err := semantic.Build(g)
 	if err != nil {
 		t.Fatalf("semantic.Build failed: %v", err)
@@ -177,6 +179,7 @@ func TestGenerate_UniqueConstraint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("graph.Build failed: %v", err)
 	}
+	semantic.ResolveColumns(model)
 	sg, err := semantic.Build(g)
 	if err != nil {
 		t.Fatalf("semantic.Build failed: %v", err)
@@ -235,6 +238,7 @@ func TestGenerate_Determinism(t *testing.T) {
 
 	// Generate twice with same seed.
 	g1, _ := graph.Build(model)
+	semantic.ResolveColumns(model)
 	sg1, _ := semantic.Build(g1)
 	plan1, _ := planner.BuildPlan(g1, model, 5)
 	ctx1 := &GenerationContext{GlobalSeed: 12345, Model: model, Graph: g1, SemanticGraph: sg1}
@@ -390,6 +394,7 @@ func TestGenerate_CycleResolution(t *testing.T) {
 func TestGenerate_EmptyPlan(t *testing.T) {
 	model := &schema.Model{}
 	g, _ := graph.Build(model)
+	semantic.ResolveColumns(model)
 	sg, _ := semantic.Build(g)
 	plan, _ := planner.BuildPlan(g, model, 10)
 

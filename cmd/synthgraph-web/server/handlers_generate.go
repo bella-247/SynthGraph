@@ -29,6 +29,8 @@ func runGenerationPipeline(rawSQL string, rowCount int, seed int64) (*generator.
 		return nil, nil, fmt.Errorf("graph build error: %w", graphError)
 	}
 
+	semantic.ResolveColumns(parsedModel)
+
 	semanticGraph, semanticError := semantic.Build(graphInstance)
 	if semanticError != nil {
 		return nil, nil, fmt.Errorf("semantic build error: %w", semanticError)
@@ -195,30 +197,6 @@ func (server *Server) handleDeleteJob(responseWriter http.ResponseWriter, reques
 	}
 
 	writeJSON(responseWriter, http.StatusOK, map[string]string{"status": "deleted"})
-}
-
-func (server *Server) identifyJunctionTables(graphInstance *graph.Graph) map[string]bool {
-	junctionTables := make(map[string]bool)
-	for _, graphEdge := range graphInstance.Edges {
-		if graphEdge.Kind != graph.EdgeKindDependsOn {
-			continue
-		}
-		foreignKeyMeta, isFK := graphEdge.Metadata.(*graph.FKMetadata)
-		if isFK && foreignKeyMeta.Cardinality == graph.CardinalityManyToMany {
-			junctionTables[graphEdge.From] = true
-		}
-	}
-	return junctionTables
-}
-
-func (server *Server) countColumnsPerTable(graphInstance *graph.Graph) map[string]int {
-	tableColumns := make(map[string]int)
-	for _, graphEdge := range graphInstance.Edges {
-		if graphEdge.Kind == graph.EdgeKindContains {
-			tableColumns[graphEdge.From]++
-		}
-	}
-	return tableColumns
 }
 
 func init() {

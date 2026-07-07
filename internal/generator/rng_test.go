@@ -62,6 +62,7 @@ func TestGenerate_DifferentSeeds(t *testing.T) {
 	}
 
 	g1, _ := graph.Build(model)
+	semantic.ResolveColumns(model)
 	sg1, _ := semantic.Build(g1)
 	plan1, _ := planner.BuildPlan(g1, model, 10)
 	ctx1 := &GenerationContext{GlobalSeed: 1, Model: model, Graph: g1, SemanticGraph: sg1}
@@ -102,6 +103,7 @@ func TestGenerate_ZeroRows(t *testing.T) {
 	}
 
 	g, _ := graph.Build(model)
+	semantic.ResolveColumns(model)
 	sg, _ := semantic.Build(g)
 	plan, _ := planner.BuildPlan(g, model, 0)
 	ctx := &GenerationContext{GlobalSeed: 42, Model: model, Graph: g, SemanticGraph: sg}

@@ -13,7 +13,7 @@ import (
 // from a previous /api/parse call.
 // Request body: {"model": {...}}
 // Response: {"nodes": [...], "edges": [...]}
-func (serverInstance *Server) handleGraph(responseWriter http.ResponseWriter, request *http.Request) {
+func (server *Server) handleGraph(responseWriter http.ResponseWriter, request *http.Request) {
 	var requestBody parseResponse
 	if decodeError := decodeJSONBody(request, &requestBody); decodeError != nil {
 		writeError(responseWriter, http.StatusBadRequest, "invalid JSON: %v", decodeError)
@@ -73,7 +73,7 @@ func (serverInstance *Server) handleGraph(responseWriter http.ResponseWriter, re
 // from a previous /api/parse call.
 // Request body: {"model": {...}}
 // Response: {"nodes": [{"id": "...", "roles": ["entity"]}], "edges": [...]}
-func (serverInstance *Server) handleSemantic(responseWriter http.ResponseWriter, request *http.Request) {
+func (server *Server) handleSemantic(responseWriter http.ResponseWriter, request *http.Request) {
 	var requestBody parseResponse
 	if decodeError := decodeJSONBody(request, &requestBody); decodeError != nil {
 		writeError(responseWriter, http.StatusBadRequest, "invalid JSON: %v", decodeError)
@@ -89,6 +89,8 @@ func (serverInstance *Server) handleSemantic(responseWriter http.ResponseWriter,
 		writeError(responseWriter, http.StatusInternalServerError, "graph build error: %v", buildError)
 		return
 	}
+
+	semantic.ResolveColumns(requestBody.Model)
 
 	semanticGraph, semanticError := semantic.Build(graphInstance)
 	if semanticError != nil {

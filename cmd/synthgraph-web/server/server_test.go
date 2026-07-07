@@ -18,7 +18,7 @@ type flushRecorder struct {
 func (f *flushRecorder) Flush() {}
 
 func newTestServer() *Server {
-	return New("", "")
+	return New("", "", "", "")
 }
 
 func sseRequest(path string) *http.Request {
@@ -53,7 +53,7 @@ func TestHealthEndpoint(t *testing.T) {
 }
 
 func TestFrontendServesIndexHTML(t *testing.T) {
-	serverWithHTML := New("<html>test</html>", "")
+	serverWithHTML := New("<html>test</html>", "", "", "")
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	serverWithHTML.ServeHTTP(recorder, request)

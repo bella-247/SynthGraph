@@ -9,6 +9,13 @@ CREATE TABLE composite_pk (
 );
 
 -- 2. Composite foreign keys
+CREATE TABLE order_items (
+    order_id INT NOT NULL,
+    product_id INT NOT NULL,
+    quantity INT,
+    PRIMARY KEY (order_id, product_id)
+);
+
 CREATE TABLE order_details (
     order_id INT NOT NULL,
     product_id INT NOT NULL,
@@ -24,7 +31,6 @@ CREATE TABLE "MixedCase" (
 );
 
 -- 4. Schema-qualified table
-CREATE SCHEMA IF NOT EXISTS billing;
 CREATE TABLE billing.invoices (
     id SERIAL PRIMARY KEY,
     amount DECIMAL(10, 2) NOT NULL,
@@ -73,6 +79,12 @@ CREATE TABLE employees (
 );
 
 -- 8. Multiple foreign keys on same table
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL
+);
+
 CREATE TABLE posts (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,

@@ -14,12 +14,18 @@ import (
 //go:embed index.html
 var indexHTML string
 
+//go:embed styles.css
+var stylesCSS string
+
+//go:embed app.js
+var appJS string
+
 func main() {
 	port := flag.Int("port", server.DefaultPort, "HTTP server port")
 	jobPersistPath := flag.String("job-file", "synthgraph-jobs.json", "path to job persistence file (empty for in-memory only)")
 	flag.Parse()
 
-	serverInstance := server.New(indexHTML, *jobPersistPath)
+	serverInstance := server.New(indexHTML, stylesCSS, appJS, *jobPersistPath)
 
 	signalChannel := make(chan os.Signal, 1)
 	signal.Notify(signalChannel, syscall.SIGINT, syscall.SIGTERM)

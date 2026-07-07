@@ -12,23 +12,35 @@ import (
 
 var serverStartTime = time.Now()
 
+// handleStyles serves the embedded CSS at GET /styles.css.
+func (server *Server) handleStyles(responseWriter http.ResponseWriter, request *http.Request) {
+	responseWriter.Header().Set("Content-Type", "text/css; charset=utf-8")
+	responseWriter.Write([]byte(server.stylesCSS))
+}
+
+// handleAppJS serves the embedded JS at GET /app.js.
+func (server *Server) handleAppJS(responseWriter http.ResponseWriter, request *http.Request) {
+	responseWriter.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	responseWriter.Write([]byte(server.appJS))
+}
+
 // handleFrontend serves the embedded SPA at GET /.
 // Any path other than "/" returns a 404.
-func (serverInstance *Server) handleFrontend(responseWriter http.ResponseWriter, request *http.Request) {
+func (server *Server) handleFrontend(responseWriter http.ResponseWriter, request *http.Request) {
 	if request.URL.Path != "/" {
 		http.NotFound(responseWriter, request)
 		return
 	}
 	responseWriter.Header().Set("Content-Type", "text/html; charset=utf-8")
-	responseWriter.Write([]byte(serverInstance.indexHTML))
+	responseWriter.Write([]byte(server.indexHTML))
 }
 
 // handleHealth returns a detailed status check at GET /api/health.
 // Orchestrators (Kubernetes, Nomad) should use this for liveness probes.
 // Returns version, uptime, goroutine count, and job count.
-func (serverInstance *Server) handleHealth(responseWriter http.ResponseWriter, request *http.Request) {
+func (server *Server) handleHealth(responseWriter http.ResponseWriter, request *http.Request) {
 	uptime := time.Since(serverStartTime).Truncate(time.Second).String()
-	jobs := serverInstance.jobStore.List()
+	jobs := server.jobStore.List()
 	writeJSON(responseWriter, http.StatusOK, map[string]interface{}{
 		"status":   "ok",
 		"version":  "0.1.0",
@@ -42,7 +54,7 @@ func (serverInstance *Server) handleHealth(responseWriter http.ResponseWriter, r
 // The model includes all tables, columns, enums, and foreign keys extracted from the SQL.
 // Request body: {"sql": "CREATE TABLE ..."}
 // Response: {"tables": 3, "enums": 1, "model": {...}, "warnings": [...]}
-func (serverInstance *Server) handleParse(responseWriter http.ResponseWriter, request *http.Request) {
+func (server *Server) handleParse(responseWriter http.ResponseWriter, request *http.Request) {
 	var requestBody parseRequest
 	if decodeError := decodeJSONBody(request, &requestBody); decodeError != nil {
 		writeError(responseWriter, http.StatusBadRequest, "invalid JSON: %v", decodeError)

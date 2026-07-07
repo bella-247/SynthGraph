@@ -13,10 +13,11 @@ import (
 // Column order follows the schema definition for determinism.
 // If IncludeHeader is true, the first row contains column names.
 func writeCSVTable(writer io.Writer, table *generator.GeneratedTable, model *schema.Model, config *ExportConfig) error {
-	columns := columnNames(model, table.TableName)
-	if len(columns) == 0 {
+	schemaTable := model.TableMap[table.TableName]
+	if schemaTable == nil {
 		return fmt.Errorf("table %q not found in schema model", table.TableName)
 	}
+	columns := columnNames(schemaTable)
 	if len(table.Rows) == 0 {
 		return nil
 	}

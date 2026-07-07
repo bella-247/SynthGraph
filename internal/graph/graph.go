@@ -38,19 +38,19 @@ func newGraph() *Graph {
 
 // addNode inserts a node into the graph, registering it in both the O(1)
 // lookup map and the deterministically-ordered node list.
-func (graph *Graph) addNode(node *Node) {
-	graph.Nodes[node.ID] = node
-	graph.NodeList = append(graph.NodeList, node)
+func (g *Graph) addNode(node *Node) {
+	g.Nodes[node.ID] = node
+	g.NodeList = append(g.NodeList, node)
 }
 
 // addEdge appends an edge to the graph's edge list.
-func (graph *Graph) addEdge(edge *Edge) {
-	graph.Edges = append(graph.Edges, edge)
+func (g *Graph) addEdge(edge *Edge) {
+	g.Edges = append(g.Edges, edge)
 }
 
 // HasNode returns true if a node with the given ID exists in the graph.
-func (graph *Graph) HasNode(nodeID string) bool {
-	_, exists := graph.Nodes[nodeID]
+func (g *Graph) HasNode(nodeID string) bool {
+	_, exists := g.Nodes[nodeID]
 	return exists
 }
 
