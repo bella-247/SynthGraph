@@ -12,6 +12,24 @@ import (
 
 var serverStartTime = time.Now()
 
+var faviconSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#8b5cf6"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="6" fill="url(#g)"/>
+  <text x="16" y="22" font-family="system-ui,sans-serif" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">SG</text>
+</svg>`
+
+// handleFavicon serves the SVG favicon at GET /favicon.ico.
+func (server *Server) handleFavicon(responseWriter http.ResponseWriter, request *http.Request) {
+	responseWriter.Header().Set("Content-Type", "image/svg+xml")
+	responseWriter.Header().Set("Cache-Control", "public, max-age=86400")
+	responseWriter.Write([]byte(faviconSVG))
+}
+
 // handleStyles serves the embedded CSS at GET /styles.css.
 func (server *Server) handleStyles(responseWriter http.ResponseWriter, request *http.Request) {
 	responseWriter.Header().Set("Content-Type", "text/css; charset=utf-8")
