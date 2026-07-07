@@ -1,6 +1,6 @@
 # SynthGraph — Architecture
 
-**Version:** 1.0.0  
+**Version:** 2.0.0  
 **Language:** Go  
 
 ---
@@ -10,73 +10,122 @@
 ```
 synthgraph/
 ├── cmd/
-│   └── synthgraph/
-│       └── main.go                  # Entry point — wires CLI to core
+│   ├── synthgraph/
+│   │   ├── main.go                    # Entry point — wires CLI to core
+│   │   ├── generate.go                # `synthgraph generate` subcommand
+│   │   ├── inspect.go                 # `synthgraph inspect` subcommand
+│   │   ├── parse.go                   # `synthgraph parse` subcommand
+│   │   ├── config.go                  # YAML config file support
+│   │   ├── config_test.go
+│   │   ├── log.go                     # Structured logger
+│   │   └── version.go                 # `--version` support
+│   │
+│   ├── synthgraph-web/
+│   │   ├── main.go                    # Web API server entry point
+│   │   └── server/
+│   │       ├── handlers_frontend.go   # Frontend page handlers
+│   │       ├── handlers_generate.go   # /api/generate endpoint
+│   │       ├── handlers_graph.go      # /api/graph endpoint
+│   │       ├── handlers_stream.go     # SSE streaming
+│   │       ├── helpers.go             # Shared response helpers
+│   │       ├── job_store.go           # In-memory + disk job persistence
+│   │       ├── middleware.go          # CORS, recovery, body limit, timeout
+│   │       ├── ratelimit.go           # Per-connection rate limiting
+│   │       ├── server.go              # HTTP router + middleware setup
+│   │       ├── server_test.go
+│   │       └── types.go               # Shared request/response types
+│   │
+│   └── serveviz/
+│       └── main.go                    # Interactive serving visualizer
 │
 ├── internal/
 │   ├── schema/
-│   │   └── model.go                 # Unified internal representation (parser-agnostic)
+│   │   ├── model.go                   # Model, Table, Column, ForeignKey, EnumType
+│   │   ├── validate.go                # Pre-generation model validation
+│   │   └── validate_test.go
 │   │
 │   ├── parser/
-│   │   ├── parser.go                # SchemaParser interface definition
-│   │   ├── postgresql/
-│   │   │   ├── parser.go            # PostgreSQL parser wrapping pg_query_go
-│   │   │   ├── ast.go               # PostgreSQL AST types
-│   │   │   ├── types.go             # Type mapping utilities
-│   │   │   ├── translate.go         # Pipeline orchestrator (extract → normalize → link → validate → build)
-│   │   │   ├── normalize.go         # Stage 2: type canonicalization
-│   │   │   ├── link.go              # Stage 3: FK and enum cross-reference resolution
-│   │   │   ├── validate.go          # Stage 4: schema consistency validation
-│   │   │   └── translate_test.go
-│   │   └── registry.go              # Auto-detect parser by file extension
+│   │   ├── parser.go                  # SchemaParser interface definition
+│   │   ├── registry.go                # Auto-detect parser by file extension
+│   │   └── postgresql/
+│   │       ├── parser.go              # PostgreSQL parser wrapping pg_query_go
+│   │       ├── adapter_cgo.go         # CGO-enabled pg_query wrapper
+│   │       ├── adapter_nocgo.go       # CGO-disabled: returns clear error
+│   │       ├── ast.go                 # PostgreSQL AST types
+│   │       ├── types.go               # Type mapping utilities
+│   │       ├── translate.go           # Pipeline: extract → normalize → link → validate → build
+│   │       ├── normalize.go           # Stage 2: type canonicalization
+│   │       ├── link.go                # Stage 3: FK and enum cross-reference resolution
+│   │       ├── validate.go            # Stage 4: schema consistency validation
+│   │       ├── dedupe.go              # Dedup logic for build stage
+│   │       ├── extract.go             # Stage 1: raw table state from AST
+│   │       ├── translate_test.go
+│   │       └── types_test.go
 │   │
 │   ├── graph/
-│   │   ├── graph.go                 # Node, Edge, SchemaGraph types
-│   │   ├── builder.go               # BuildGraph() — schema model → graph
-│   │   ├── topo.go                  # TopologicalSort() — Kahn's algorithm
-│   │   ├── cycles.go                # FindCycles() — Tarjan's SCC
-│   │   └── graph_test.go
+│   │   ├── graph.go                   # Graph, Node, Edge, SchemaGraph types
+│   │   ├── builder.go                 # Build() — schema model → graph
+│   │   ├── topo.go                    # TopologicalSort() — Kahn's algorithm
+│   │   ├── cycles.go                  # FindCycles() — Tarjan's SCC (iterative, explicit stack)
+│   │   ├── cardinality.go             # Edge cardinality inference
+│   │   ├── node.go / nodes.go         # Node helpers
+│   │   ├── edge.go / edges.go         # Edge helpers
+│   │   ├── validate.go                # Graph consistency validation
+│   │   └── *_test.go                  # Test files
+│   │
+│   ├── semantic/
+│   │   ├── doc.go                     # Package documentation — "the brain of SynthGraph"
+│   │   ├── builder.go                 # Build() — graph → SemanticGraph
+│   │   ├── semantic_graph.go          # SemanticGraph, SemanticNode types
+│   │   ├── models.go                  # Inference models (TemporalInfo, RoleInfo, etc.)
+│   │   ├── column.go                  # Column-level semantic resolution
+│   │   ├── rule.go                    # Rule interface and inference engine
+│   │   ├── infer_roles.go             # Column role inference rules
+│   │   ├── infer_relationships.go     # Relationship kind inference rules
+│   │   ├── infer_temporal.go          # Temporal column pattern inference
+│   │   ├── infer_audit.go             # Audit column pattern inference
+│   │   └── *_test.go                  # Test files
 │   │
 │   ├── planner/
-│   │   ├── planner.go               # Plan, TablePlan, DeferredFK types
-│   │   ├── builder.go               # BuildPlan() — graph → generation plan
-│   │   └── planner_test.go
+│   │   ├── planner.go                 # Plan, TablePlan, DeferredFK types
+│   │   ├── builder.go                 # BuildPlan() — graph → generation plan
+│   │   ├── cycles.go                  # Cycle resolution strategy
+│   │   ├── topsort.go                 # Topological ordering for generation
+│   │   ├── blocked.go                 # Blocked dependency detection
+│   │   └── *_test.go                  # Test files
 │   │
 │   ├── generator/
-│   │   ├── generator.go             # GeneratorFunc type, GenerationContext
-│   │   ├── registry.go              # GeneratorRegistry — name + type maps
-│   │   ├── engine.go                # Generate() — executes plan, produces Dataset
-│   │   ├── dataset.go               # Dataset, TableData types
-│   │   ├── generators_identity.go   # id, uuid generators
-│   │   ├── generators_person.go     # email, name, phone generators
-│   │   ├── generators_location.go   # address, city, country, lat/lng
-│   │   ├── generators_web.go        # url, ip, token, api_key
-│   │   ├── generators_finance.go    # price, amount, currency, percentage
-│   │   ├── generators_text.go       # description, title, bio
-│   │   ├── generators_time.go       # created_at, updated_at, deleted_at
-│   │   ├── generators_boolean.go    # is_*, has_*, can_*
-│   │   ├── generators_types.go      # type-based fallback generators
-│   │   └── engine_test.go
+│   │   ├── generator.go               # GenerationContext, GenError, Dataset types
+│   │   ├── generate.go                # Generate() — executes plan, produces Dataset
+│   │   ├── generate_row.go            # Row-level generation loop
+│   │   ├── context.go                 # Pre-computation for correlated values
+│   │   ├── registry.go                # GeneratorRegistry — semantic + type maps
+│   │   ├── rng.go                     # Deterministic per-table RNG (FNV-64a + PCG)
+│   │   ├── rng_test.go
+│   │   ├── fk.go                      # FK column map + PK extraction
+│   │   ├── tracker.go                 # UNIQUE constraint tracking
+│   │   ├── backfill.go                # Deferred FK backfill for cycle resolution
+│   │   ├── datasets.go                # Word lists (names, cities, etc.)
+│   │   ├── types.go / types_test.go   # Type-based fallback generators
+│   │   ├── scalars.go                 # int, serial, float generators
+│   │   ├── name.go                    # first_name, last_name, full_name generators
+│   │   ├── contact.go                 # email, phone, address generators
+│   │   ├── temporal.go                # timestamp, date generators
+│   │   ├── numeric.go                 # price, amount, currency generators
+│   │   ├── misc.go                    # Code, slug generators
+│   │   ├── web.go                     # URL, IP generators
+│   │   ├── content.go                 # title, description generators
+│   │   └── *_test.go                  # Test files
 │   │
 │   ├── validator/
-│   │   ├── validator.go             # Validate() — full constraint check
-│   │   ├── rules.go                 # Individual rule implementations
-│   │   └── validator_test.go
+│   │   ├── validator.go               # Validate() — full post-generation constraint check
+│   │   └── validator_test.go          # 19+ tests covering all constraint rules
 │   │
-│   ├── exporter/
-│   │   ├── exporter.go              # Exporter interface
-│   │   ├── sql/
-│   │   │   ├── sql_exporter.go      # SQL INSERT exporter
-│   │   │   └── sql_exporter_test.go
-│   │   └── csv/
-│   │       ├── csv_exporter.go      # CSV exporter
-│   │       └── csv_exporter_test.go
-│   │
-│   └── cli/
-│       ├── root.go                  # Root cobra command
-│       ├── generate.go              # `generate` subcommand
-│       ├── inspect.go               # `inspect` subcommand
-│       └── version.go               # `version` subcommand
+│   └── exporter/
+│       ├── exporter.go                # ExportConfig, ExportSQL, ExportCSV
+│       ├── sql.go                     # SQL INSERT implementation
+│       ├── csv.go                     # CSV implementation
+│       └── exporter_test.go
 │
 ├── testdata/
 │   ├── schemas/
@@ -93,15 +142,23 @@ synthgraph/
 │       └── hr_100.sql
 │
 ├── docs/
-│   ├── architecture.md              # This file
-│   ├── graph_model.md               # Graph theory details
-│   ├── constraint_system.md         # Constraint handling details
-│   └── cli_reference.md             # Full CLI reference
+│   ├── architecture.md                # This file
+│   ├── graph_model.md                 # Graph theory details
+│   ├── constraint_system.md           # Constraint handling details
+│   └── cli_reference.md               # Full CLI reference
+│
+├── scripts/
+│   ├── build.sh
+│   ├── test.sh
+│   ├── lint.sh
+│   ├── ci.sh
+│   ├── clean.sh
+│   └── run.sh
 │
 ├── .github/
 │   ├── workflows/
-│   │   ├── ci.yml                   # Test + lint on every PR
-│   │   └── release.yml              # Build binaries on tag push
+│   │   ├── ci.yml                     # Test + lint on every PR
+│   │   └── release.yml                # Build binaries on tag push
 │   ├── ISSUE_TEMPLATE/
 │   │   ├── bug_report.md
 │   │   └── feature_request.md
@@ -110,10 +167,12 @@ synthgraph/
 ├── go.mod
 ├── go.sum
 ├── Makefile
+├── dev.ps1                            # Windows development automation
+├── Dockerfile
 ├── README.md
 ├── CONTRIBUTING.md
 ├── ROADMAP.md
-└── LICENSE                          # MIT
+└── LICENSE                            # MIT
 ```
 
 ---
@@ -157,6 +216,14 @@ CLI flags
     ▼   ── SchemaGraph ──
     │
     ▼
+[Semantic Analysis]                  internal/semantic/builder.go
+    │  infers column roles, relationship kinds, temporal patterns
+    │  from node/edge structure + column naming conventions
+    │  returns *SemanticGraph
+    │
+    ▼   ── SemanticGraph ──
+    │
+    ▼
 [Topological Sort + Cycle Detection] internal/graph/topo.go, cycles.go
     │  Kahn's algorithm + Tarjan's SCC
     │  returns ordered tables + cycle members + nullable breakpoints
@@ -171,21 +238,22 @@ CLI flags
     ▼   ── GenerationPlan ──
     │
     ▼
-[Generator Engine]                   internal/generator/engine.go
+[Generator Engine]                   internal/generator/generate.go
     │  iterates TablePlans
     │  resolves GeneratorFunc per column (seeded per-table RNG)
     │  enforces PK/unique via value pools
     │  selects FK values from generated PK pools
+    │  cross-column correlation (city→state→zip, created_at < updated_at)
     │  returns *Dataset
     │
     ▼   ── Dataset ──
     │
     ▼
-[Post-generation Validator]          internal/validator/
+[Post-generation Validator]          internal/validator/validator.go
     │  checks all constraints (FK, PK, unique, enum, NOT NULL, length)
     │  returns []ValidationError (empty = pass)
     │
-    ▼   ── Validated Dataset ──
+    ▼   ── ValidatedDataset ──
     │
     ▼
 [Exporter]                           internal/exporter/
@@ -219,6 +287,16 @@ type SchemaParser interface {
 // All feed the same schema.Model. Graph, planner, generator are parser-agnostic.
 ```
 
+### Semantic Rule
+
+```go
+// internal/semantic/rule.go
+type Rule interface {
+    Name() string
+    Apply(nodeID string, node *graph.Node, g *graph.Graph) []Inference
+}
+```
+
 ### Exporter
 
 ```go
@@ -234,7 +312,9 @@ type Exporter interface {
 
 ```go
 // internal/generator/generator.go
-type GeneratorFunc func(col *schema.Column, ctx *GenerationContext) (any, error)
+type TypeGenerator interface {
+    Generate(col *schema.Column, rowIndex int, rng *rand.Rand) (any, error)
+}
 ```
 
 ---
@@ -246,14 +326,16 @@ These rules are enforced. Violations are architectural bugs.
 | Package | May import | Must NOT import |
 |---|---|---|
 | `schema` | stdlib only | anything internal |
-| `parser/*` | `schema`, stdlib | `graph`, `generator`, `validator`, `exporter` |
+| `parser/*` | `schema`, stdlib | `graph`, `semantic`, `generator`, `validator`, `exporter` |
 | `parser/postgresql` | `schema`, stdlib, `pg_query_go` | nothing (parser-specific layer) |
-| `graph` | `schema`, stdlib | `parser`, `generator`, `validator`, `exporter` |
-| `planner` | `schema`, `graph`, stdlib | `parser`, `generator`, `validator`, `exporter` |
-| `generator` | `schema`, `planner`, stdlib | `parser`, `graph`, `validator`, `exporter` |
-| `validator` | `schema`, `generator`, stdlib | `parser`, `graph`, `planner`, `exporter` |
-| `exporter/*` | `schema`, `generator`, stdlib | `parser`, `graph`, `planner`, `validator` |
-| `cli` | all of the above | nothing outside `internal/` |
+| `graph` | `schema`, stdlib | `parser`, `semantic`, `generator`, `validator`, `exporter` |
+| `semantic` | `schema`, `graph`, stdlib | `parser`, `generator`, `validator`, `exporter` |
+| `planner` | `schema`, `graph`, stdlib | `parser`, `semantic`, `generator`, `validator`, `exporter` |
+| `generator` | `schema`, `graph`, `semantic`, `planner`, stdlib | `parser`, `validator`, `exporter` |
+| `validator` | `schema`, `generator`, stdlib | `parser`, `graph`, `semantic`, `planner`, `exporter` |
+| `exporter` | `schema`, `generator`, stdlib | `parser`, `graph`, `semantic`, `planner`, `validator` |
+| `cmd/synthgraph` | all `internal/` packages | nothing outside the module |
+| `cmd/synthgraph-web` | all `internal/` packages | nothing outside the module |
 
 ---
 
@@ -280,7 +362,7 @@ No randomness from system sources.
 
 The only exception is the Parser stage, which reads a file from disk. After that, the pipeline is pure.
 
-All randomness is channeled through the seeded per-table RNG derived from `TableSeed = hash(GlobalSeed, TableName)`. No stage calls `rand.Int()` or `time.Now()` directly.
+All randomness is channeled through the seeded per-table RNG derived from `TableSeed = FNV-64a("globalSeed:tableName")`. No stage calls `rand.Int()` or `time.Now()` directly.
 
 ---
 
@@ -293,6 +375,7 @@ Each pipeline artifact has a well-defined invariant. A stage may assume its inpu
 | `AST` | Represents exactly what the source parser produced. No transformations applied. | Parser |
 | `schema.Model` | Types are canonical. Enum references resolved. FK targets verified to exist. No duplicate tables or columns. Internally consistent. | Translator (`build()`) |
 | `SchemaGraph` | Every table has exactly one node. Every FK has exactly one directed edge. Self-referencing FKs are self-loop edges. Edge nullability recorded. No duplicate edges. | Graph Builder |
+| `SemanticGraph` | Every table node has inferred roles, temporal patterns, and relationship kinds. All inferences are additive — the original graph is preserved. | Semantic Analysis |
 | `GenerationPlan` | Generation order is finalized. Cycles are identified. Each cycle has a resolution strategy (nullable breakpoint or error). Deferred FKs are enumerated. | Planner |
 | `Dataset` | Row count per table matches plan. PK values are unique per table. FK values reference existing rows. Unique constraints hold. Serial columns are sequential. Deferred FK columns are NULL. | Generator |
 | `ValidatedDataset` | All constraints verified: PK uniqueness, FK referential integrity, unique constraints, enum values, NOT NULL, length limits. Safe to export. | Post-generation Validator |
@@ -304,35 +387,39 @@ Each pipeline artifact has a well-defined invariant. A stage may assume its inpu
 ```go
 // Each stage defines its own error type for clear categorization
 
-type ParseError struct {
-    Line    int
-    Column  int
+// schema.ValidationError — found in schema/validate.go
+type ValidationError struct {
+    Table   string
     Message string
 }
 
-type GraphError struct {
-    Kind    GraphErrorKind  // CycleUnresolvable, SelfReferenceNotNullable
+// graph.ValidationError — found in graph/validate.go
+type GraphValidationError struct {
+    Message string
+}
+
+// planner errors — found in planner/cycles.go, planner/blocked.go
+type CycleError struct {
     Tables  []string
     Message string
-    Hint    string
 }
 
-type GenerationError struct {
+// generator.GenError — found in generator/generator.go
+type GenError struct {
     Table   string
+    Row     int
     Column  string
-    Rule    string
-    Retries int
     Message string
 }
 
-type ValidationError struct {
-    Table      string
-    Column     string
-    RowIndex   int
-    Value      any
-    Rule       string
-    Message    string
-    IsInternal bool
+// validator.ValidationError — found in validator/validator.go
+type PostGenValidationError struct {
+    Table    string
+    Column   string
+    RowIndex int
+    Value    any
+    Rule     string   // "NOT_NULL", "PK_UNIQUE", "UNIQUE", "ENUM", "LENGTH", "FK"
+    Message  string
 }
 ```
 
@@ -365,6 +452,8 @@ release:
     GOOS=darwin  GOARCH=arm64 go build -o dist/synthgraph-darwin-arm64  ./cmd/synthgraph
     GOOS=windows GOARCH=amd64 go build -o dist/synthgraph-windows-amd64.exe ./cmd/synthgraph
 ```
+
+Note: cross-compilation requires `CGO_ENABLED=1` for the PostgreSQL parser (depends on `pg_query_go` via CGO). Ensure a C cross-compiler is available for each target platform, or see `docs/cli_reference.md` for alternative build setups.
 
 ---
 
