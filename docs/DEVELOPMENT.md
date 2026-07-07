@@ -779,3 +779,34 @@ Go compiles to the current directory by default. Either use `go run` instead, or
 rtk go build -o synthgraph.exe ./cmd/synthgraph/
 rtk .\synthgraph.exe generate -i schema.sql
 ```
+
+## Dev Scripts
+
+For convenience, a set of scripts automates common operations. Use the `.sh` scripts from Git Bash/WSL, or the unified `dev.ps1` from PowerShell.
+
+### Shell scripts (`scripts/`)
+
+| Script | What it does |
+|---|---|
+| `scripts/build.sh` | Builds all 3 binaries into `bin/` |
+| `scripts/test.sh [mode]` | Test runner — `unit`, `all`, `coverage`, `quick`, `server`, `parser` |
+| `scripts/lint.sh` | `go vet` + `gofmt` check |
+| `scripts/run.sh web [port]` | Start web server |
+| `scripts/run.sh cli [schema]` | Run CLI generator on a schema |
+| `scripts/clean.sh` | Remove build artifacts |
+| `scripts/ci.sh` | Full pipeline: vet → build → test |
+
+### PowerShell (`dev.ps1`)
+
+```powershell
+.\dev.ps1 build              # build all binaries
+.\dev.ps1 test               # unit tests (no CGO)
+.\dev.ps1 test all           # full suite (CGO)
+.\dev.ps1 test coverage      # with coverage report
+.\dev.ps1 lint               # vet + format check
+.\dev.ps1 run web            # start server on port 9090
+.\dev.ps1 run web 9090       # custom port
+.\dev.ps1 run cli            # run CLI on sakila schema
+.\dev.ps1 clean              # remove build artifacts
+.\dev.ps1 ci                 # full pipeline
+```

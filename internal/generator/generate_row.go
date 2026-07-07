@@ -10,8 +10,6 @@ import (
 
 const maxUniqueRetries = 100
 
-const placeholderValue = "PLACEHOLDER"
-
 // generateTable generates all rows for a single table from the plan.
 func generateTable(
 	tablePlan planner.TablePlan,
@@ -138,8 +136,10 @@ func generateTable(
 
 			// Retry on UNIQUE violation.
 			if tracker.isUniqueColumn(column.Name) {
+				exhausted := true
 				for attempts := 0; attempts < maxUniqueRetries; attempts++ {
 					if !tracker.checkSeen(column.Name, value) {
+						exhausted = false
 						break
 					}
 					value, err = generator.Generate(&column, rowIndex+attempts+1, rng)
@@ -152,16 +152,26 @@ func generateTable(
 						}
 					}
 				}
+				if exhausted {
+					return nil, &GenError{
+						Table:   tableName,
+						Row:     rowIndex,
+						Column:  column.Name,
+						Message: fmt.Sprintf("could not generate unique value after %d attempts — value pool exhausted", maxUniqueRetries),
+					}
+				}
 				tracker.record(column.Name, value)
 			}
 
-			// NOT NULL safeguard: if the value is nil and the column is NOT NULL,
-			// generate a placeholder to avoid constraint violations.
+			// NOT NULL violation: if the value is nil and the column is NOT NULL,
+			// return an error — we must not fabricate values that silently break
+			// the documented Dataset invariant.
 			if value == nil && !column.Nullable {
-				if column.Name == "id" {
-					value = int64(0)
-				} else {
-					value = placeholderValue
+				return nil, &GenError{
+					Table:   tableName,
+					Row:     rowIndex,
+					Column:  column.Name,
+					Message: fmt.Sprintf("not-null column %q produced nil value — generator cannot satisfy NOT NULL constraint", column.Name),
 				}
 			}
 
