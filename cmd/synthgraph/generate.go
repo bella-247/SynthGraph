@@ -16,6 +16,7 @@ import (
 	"synthgraph/internal/planner"
 	"synthgraph/internal/schema"
 	"synthgraph/internal/semantic"
+	"synthgraph/internal/validator"
 )
 
 type generateConfig struct {
@@ -86,6 +87,14 @@ func runGenerate(args []string) {
 	}
 
 	globalLogger.Info("generated %d table(s)", len(dataset.Tables))
+
+	if validationErrors := validator.Validate(dataset, model); len(validationErrors) > 0 {
+		globalLogger.Error("post-generation validation failed (%d violation(s)):", len(validationErrors))
+		for _, ve := range validationErrors {
+			globalLogger.Error("  - %s", ve.Error())
+		}
+		os.Exit(1)
+	}
 
 	if err := exportData(config, dataset, model); err != nil {
 		globalLogger.Error("export failed: %v", err)
