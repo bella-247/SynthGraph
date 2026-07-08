@@ -553,6 +553,115 @@ func TestValidate_EmptyRows(t *testing.T) {
 	}
 }
 
+// ── Composite FK referential integrity tests ───────────────────────────────
+
+func TestValidateFK_Composite(t *testing.T) {
+	model := &schema.Model{
+		Tables: []*schema.Table{
+			{
+				Name: "child",
+				Columns: []schema.Column{
+					{Name: "a_id", Type: "int"},
+					{Name: "b_id", Type: "int"},
+					{Name: "val", Type: "varchar"},
+				},
+				ForeignKeys: []schema.ForeignKey{
+					{Columns: []string{"a_id", "b_id"}, RefTable: "parent", RefColumns: []string{"a", "b"}},
+				},
+			},
+			{
+				Name: "parent",
+				Columns: []schema.Column{
+					{Name: "a", Type: "int"},
+					{Name: "b", Type: "int"},
+					{Name: "name", Type: "varchar"},
+				},
+				PrimaryKey: []string{"a", "b"},
+			},
+		},
+	}
+	buildTableMap(model)
+	dataset := &generator.Dataset{
+		Tables: []*generator.GeneratedTable{
+			{
+				TableName: "parent",
+				Rows: []generator.GeneratedRow{
+					{"a": int64(1), "b": int64(10), "name": "p1"},
+					{"a": int64(2), "b": int64(20), "name": "p2"},
+				},
+			},
+			{
+				TableName: "child",
+				Rows: []generator.GeneratedRow{
+					{"a_id": int64(1), "b_id": int64(10), "val": "valid ref"},
+				},
+			},
+		},
+	}
+
+	errs := Validate(dataset, model)
+	if errs != nil {
+		t.Errorf("expected no errors for valid composite FK, got: %v", errs)
+	}
+}
+
+func TestValidateFK_CompositeOrphaned(t *testing.T) {
+	model := &schema.Model{
+		Tables: []*schema.Table{
+			{
+				Name: "child",
+				Columns: []schema.Column{
+					{Name: "a_id", Type: "int"},
+					{Name: "b_id", Type: "int"},
+				},
+				ForeignKeys: []schema.ForeignKey{
+					{Columns: []string{"a_id", "b_id"}, RefTable: "parent", RefColumns: []string{"a", "b"}},
+				},
+			},
+			{
+				Name: "parent",
+				Columns: []schema.Column{
+					{Name: "a", Type: "int"},
+					{Name: "b", Type: "int"},
+				},
+				PrimaryKey: []string{"a", "b"},
+			},
+		},
+	}
+	buildTableMap(model)
+	dataset := &generator.Dataset{
+		Tables: []*generator.GeneratedTable{
+			{
+				TableName: "parent",
+				Rows: []generator.GeneratedRow{
+					{"a": int64(1), "b": int64(10)},
+				},
+			},
+			{
+				TableName: "child",
+				Rows: []generator.GeneratedRow{
+					{"a_id": int64(99), "b_id": int64(10)}, // no matching composite key
+				},
+			},
+		},
+	}
+
+	errs := Validate(dataset, model)
+	if errs == nil {
+		t.Fatal("expected FK error for orphaned composite FK, got none")
+	}
+	found := false
+	for _, e := range errs {
+		if e.Rule == "FK" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected FK error, got: %v", errs)
+	}
+}
+
 // ── End-to-end golden test using generator ─────────────────────────────────
 
 func TestValidate_GoldenGeneration(t *testing.T) {

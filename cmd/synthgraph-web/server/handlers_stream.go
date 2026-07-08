@@ -73,14 +73,19 @@ func (stream *streamState) sendError(message string) {
 //	event: complete  data: {"job_id":1,"tables":5,"data":"...","format":"csv"}
 //	event: error     data: {"message":"parse error: ..."}
 func (server *Server) handleGenerateStream(responseWriter http.ResponseWriter, request *http.Request) {
+	flusher, supportsFlushing := responseWriter.(http.Flusher)
+	if !supportsFlushing {
+		writeError(responseWriter, http.StatusInternalServerError, "streaming not supported")
+		return
+	}
+
 	responseWriter.Header().Set("Content-Type", "text/event-stream")
 	responseWriter.Header().Set("Cache-Control", "no-cache")
 	responseWriter.Header().Set("Connection", "keep-alive")
 
-	stream, ready := newStreamState(responseWriter)
-	if !ready {
-		writeError(responseWriter, http.StatusInternalServerError, "streaming not supported")
-		return
+	stream := &streamState{
+		responseWriter: responseWriter,
+		flusher:        flusher,
 	}
 
 	rawSQL := request.URL.Query().Get("input")
