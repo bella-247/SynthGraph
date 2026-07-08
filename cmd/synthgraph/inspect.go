@@ -203,7 +203,9 @@ func printSemanticSummary(sg *semantic.SemanticGraph) {
 	fmt.Println("Semantic Summary")
 	fmt.Println("================")
 
-	for id, node := range sg.Nodes {
+	for _, semNode := range sg.NodeList {
+		id := semNode.ID
+		node := semNode
 		if len(node.Roles) == 0 && node.Temporal == nil && node.Audit == nil && len(node.Inferences) == 0 {
 			continue
 		}

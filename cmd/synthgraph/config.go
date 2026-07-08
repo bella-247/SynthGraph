@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -78,8 +79,8 @@ func extractConfigFlag(args []string) (configPath string, remaining []string) {
 			r := append(args[:i], args[i+2:]...)
 			return p, r
 		}
-		if len(a) > 9 && a[:9] == "--config=" {
-			p := a[9:]
+		if strings.HasPrefix(a, "--config=") {
+			p := a[len("--config="):]
 			r := append(args[:i], args[i+1:]...)
 			return p, r
 		}
