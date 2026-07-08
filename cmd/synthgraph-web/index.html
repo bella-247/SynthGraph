@@ -22,6 +22,7 @@
     <a onclick="showPage('graph')" id="nav-graph" role="tab" aria-selected="false" tabindex="-1">Graph</a>
     <a onclick="showPage('generate')" id="nav-generate" role="tab" aria-selected="false" tabindex="-1">Generate</a>
     <a onclick="showPage('history')" id="nav-history" role="tab" aria-selected="false" tabindex="-1">History</a>
+    <a onclick="showPage('docs')" id="nav-docs" role="tab" aria-selected="false" tabindex="-1">Docs</a>
   </nav>
   <div class="header-actions">
     <button class="icon-btn" onclick="toggleShortcuts()" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><span class="kbd-shortcut">?</span></button>
@@ -214,6 +215,21 @@
 
 </div>
 
+<!-- Docs Page -->
+<div class="page" id="page-docs" role="tabpanel">
+  <div class="docs-layout">
+    <nav class="docs-sidebar" aria-label="Documentation sections">
+      <div class="docs-sidebar-title">Guide</div>
+      <a onclick="showDocSection('getting-started')" class="docs-sidebar-link active" data-section="getting-started" role="tab" aria-selected="true">Getting Started</a>
+      <a onclick="showDocSection('web-app-guide')" class="docs-sidebar-link" data-section="web-app-guide" role="tab" aria-selected="false">Web App Guide</a>
+      <a onclick="showDocSection('cli-guide')" class="docs-sidebar-link" data-section="cli-guide" role="tab" aria-selected="false">CLI Guide</a>
+      <a onclick="showDocSection('faq')" class="docs-sidebar-link" data-section="faq" role="tab" aria-selected="false">FAQ</a>
+      <a onclick="showDocSection('about')" class="docs-sidebar-link" data-section="about" role="tab" aria-selected="false">About</a>
+    </nav>
+    <main class="docs-content" id="docs-content" role="main"></main>
+  </div>
+</div>
+
 <!-- Shortcuts Modal -->
 <div class="modal-overlay" id="shortcuts-modal" style="display:none" onclick="if(event.target===this)toggleShortcuts()" role="dialog" aria-label="Keyboard shortcuts">
   <div class="modal">
@@ -226,6 +242,7 @@
       <div class="shortcut-row"><span class="kbd">G</span><span>Graph page</span></div>
       <div class="shortcut-row"><span class="kbd">D</span><span>Generate page</span></div>
       <div class="shortcut-row"><span class="kbd">H</span><span>History page</span></div>
+      <div class="shortcut-row"><span class="kbd">I</span><span>Docs page</span></div>
       <div class="shortcut-row"><span class="kbd">?</span><span>Toggle shortcuts</span></div>
       <div class="shortcut-row"><span class="kbd">Esc</span><span>Close panel / modal</span></div>
       <div class="shortcut-row"><span class="kbd">&larr;</span><span class="kbd">&rarr;</span><span>Navigate tabs</span></div>

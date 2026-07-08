@@ -348,6 +348,50 @@ table tr:hover td{background:rgba(255,255,255,0.02)}
 .empty-state-desc{font-size:13px;color:var(--text2);margin:0;max-width:360px;line-height:1.5}
 .empty-state-actions{display:flex;gap:8px;margin-top:4px}
 
+/* ─── Docs Page ─── */
+.docs-layout{display:flex;gap:24px;align-items:flex-start;min-height:calc(100vh - 120px)}
+.docs-sidebar{
+  width:200px;flex-shrink:0;position:sticky;top:78px;
+  display:flex;flex-direction:column;gap:2px;
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+  padding:8px;overflow-y:auto;max-height:calc(100vh - 100px);
+}
+.docs-sidebar-title{font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.8px;padding:6px 10px 8px;border-bottom:1px solid var(--border);margin-bottom:4px}
+.docs-sidebar-link{
+  padding:7px 10px;font-size:13px;color:var(--text2);border-radius:var(--radius-sm);
+  cursor:pointer;transition:all 0.15s;text-decoration:none;display:block;
+}
+.docs-sidebar-link:hover{color:var(--text);background:var(--bg3);text-decoration:none}
+.docs-sidebar-link.active{color:#fff;background:var(--accent)}
+.docs-content{flex:1;min-width:0;max-width:800px}
+.docs-content h2{font-size:20px;font-weight:700;color:var(--text);margin-bottom:8px;padding-bottom:12px;border-bottom:1px solid var(--border)}
+.docs-lead{font-size:15px;color:var(--text2);margin-bottom:24px;line-height:1.7}
+.docs-section{margin-bottom:28px}
+.docs-section h3{font-size:15px;font-weight:600;color:var(--text);margin-bottom:8px;margin-top:0}
+.docs-section p{font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:8px}
+.docs-section ul,.docs-section ol{padding-left:20px;margin-bottom:12px}
+.docs-section li{font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:4px}
+.docs-section pre{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 16px;overflow-x:auto;margin:8px 0 12px}
+.docs-section code{font-size:12px}
+.docs-section pre code{background:none;padding:0;border:none;font-size:12px;line-height:1.6;color:var(--text)}
+.docs-section a{color:var(--accent)}
+.shortcuts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:6px;margin:8px 0}
+.shortcuts-grid div{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2)}
+.about-table{width:auto;min-width:300px}
+.about-table td{padding:6px 12px;border-bottom:1px solid var(--border)}
+.about-table td:first-child{color:var(--text3);font-weight:500;width:120px}
+.about-table tr:last-child td{border-bottom:none}
+.faq-item h3{color:var(--accent)}
+.faq-item p{margin-bottom:4px}
+.docs-sidebar-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (max-width:768px){
+  .docs-layout{flex-direction:column}
+  .docs-sidebar{width:100%;position:static;flex-direction:row;flex-wrap:wrap;gap:4px;padding:8px;max-height:none}
+  .docs-sidebar-title{width:100;border-bottom:none;padding-bottom:4px}
+  .docs-sidebar-link{font-size:12px;padding:5px 8px}
+  .docs-content{max-width:none}
+}
+
 @media (prefers-reduced-motion: reduce){
   *,.page,.modal,.toast,.gen-done,.progress-fill::after,.loading-spinner{animation:none!important;transition:none!important}
 }
