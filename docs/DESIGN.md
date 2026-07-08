@@ -1,5 +1,7 @@
 # SynthGraph Design System
 
+> **Who this is for:** Frontend contributors and designers working on the web app. Documents colors, typography, spacing, component specs, and animation tokens used across the UI.
+
 ## Color System
 
 ### Background Hierarchy

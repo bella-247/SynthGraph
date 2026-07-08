@@ -1,5 +1,9 @@
 # SynthGraph — Graph Model
 
+> **Who this is for:** Developers contributing to the graph engine or curious about how SynthGraph handles table dependencies, cycle detection, and topological sort.
+>
+> **Plain English summary:** SynthGraph treats your database schema like a "dependency tree" — table A might need table B to exist first (because of foreign keys). This document explains the algorithms (Kahn's sort, Tarjan's cycle detection) that figure out the correct generation order automatically.
+
 This document explains the graph theory foundations of SynthGraph in detail. It is intended for contributors who want to understand or extend the graph engine.
 
 ---

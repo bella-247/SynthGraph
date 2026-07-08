@@ -1,5 +1,9 @@
 # SynthGraph — Architecture
 
+> **Who this is for:** Developers and contributors who want to understand the internal structure — how packages relate, where to add new features, and what rules to follow.
+>
+> **If you're new here:** Start with the [README](../README.md) or the [Development Guide](DEVELOPMENT.md). This document is a deep dive into the codebase structure and pipeline design.
+
 **Version:** 2.0.0  
 **Language:** Go  
 

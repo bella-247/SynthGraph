@@ -1,147 +1,179 @@
 # SynthGraph — CLI Reference
 
-Complete reference for all SynthGraph commands and flags.
+Complete guide to using SynthGraph from the command line.
 
 ---
 
-## Global Flags
+## Before you start
 
-These flags apply to all commands.
+### What you need
 
-| Flag | Default | Description |
-|---|---|---|
-| `--config <path>` | — | Path to YAML config file. CLI flags override config values |
-| `--init-config [<path>]` | `synthgraph.yaml` | Write a commented default config template and exit |
-| `--help` | — | Print help for the current command |
+- **Go 1.21+** installed (`go version` to check)
+- **GCC** installed (for CGO — [Windows setup help](#windows-setup))
 
----
-
-## `synthgraph generate`
-
-Generates a synthetic dataset from a schema file.
-
-### Usage
+### Install the CLI
 
 ```bash
-synthgraph generate --input <path> [flags]
+CGO_ENABLED=1 go install ./cmd/synthgraph@latest
 ```
 
-### Flags
-
-| Flag | Required | Default | Description |
-|---|---|---|---|
-| `--input`, `-i` | Yes | — | Path to the SQL schema file |
-| `--output`, `-o` | No | stdout | Output file path |
-| `--format`, `-f` | No | `sql` | Output format: `sql` or `csv` |
-| `--rows`, `-r` | No | `10` | Number of rows to generate per table |
-| `--seed`, `-s` | No | `42` | Integer seed for deterministic generation |
-| `--schema-name` | No | — | Schema name for SQL output (optional) |
-| `--verbose`, `-v` | No | false | Enable debug-level logging to stderr |
-| `--config` | No | — | Path to YAML config file |
-
-### Examples
-
-**Generate 100 rows per table, output to stdout:**
+Or build locally:
 ```bash
+CGO_ENABLED=1 go build -o synthgraph.exe ./cmd/synthgraph/
+```
+
+### Windows setup
+
+Install GCC via MSYS2, then add it to your PATH:
+```bash
+pacman -S mingw-w64-ucrt-x86_64-gcc
+# Add C:\msys64\ucrt64\bin to your PATH
+```
+
+---
+
+## `synthgraph generate` — Generate synthetic data
+
+This is the main command. Feed it a SQL schema, get back a seed file.
+
+### Basic usage
+
+```bash
+# Minimal — 10 rows per table, output to screen
 synthgraph generate --input schema.sql
+
+# 100 rows per table, save to file
+synthgraph generate --input schema.sql --rows 100 --output seed.sql
+
+# CSV instead of SQL
+synthgraph generate --input schema.sql --format csv --output data.csv
+
+# Reproducible output (same seed = same data every time)
+synthgraph generate --input schema.sql --seed 42
 ```
 
-**Generate 500 rows as CSV, save to file:**
+### All flags
+
+| Flag | Short | Required | Default | What it does |
+|------|-------|----------|---------|-------------|
+| `--input` | `-i` | Yes | — | Path to your SQL schema file |
+| `--output` | `-o` | No | stdout | Where to save the output file |
+| `--format` | `-f` | No | `sql` | `sql` or `csv` |
+| `--rows` | `-r` | No | `10` | Number of rows per table |
+| `--seed` | `-s` | No | `42` | Random seed (same seed = same data) |
+| `--schema-name` | — | No | — | Schema name for SQL output (e.g., `public`) |
+| `--verbose` | `-v` | No | — | Show detailed progress |
+
+### Examples by use case
+
+**Small test dataset (5 rows, quick check):**
 ```bash
-synthgraph generate --input schema.sql --format csv --rows 500 --output data.csv
+synthgraph generate --input schema.sql --rows 5 --seed 123
 ```
 
-**Use config file:**
+**Large dataset for performance testing:**
+```bash
+synthgraph generate --input schema.sql --rows 10000 --seed 42 --format csv --output ./fixtures/
+```
+
+**Using a YAML config file:**
 ```bash
 synthgraph generate --config synthgraph.yaml
 ```
 
+```yaml
+# synthgraph.yaml
+generate:
+  input: schema.sql
+  format: csv
+  rows: 500
+  seed: 2024
+```
+
 ---
 
-## `synthgraph inspect`
+## `synthgraph inspect` — Analyze your schema
 
-Analyzes a schema file and prints its structure, graph, and semantic roles.
+Shows you what SynthGraph sees in your schema before generating anything.
 
-### Usage
+### Basic usage
 
 ```bash
-synthgraph inspect --input <path> [flags]
-```
-
-### Flags
-
-| Flag | Required | Default | Description |
-|---|---|---|---|
-| `--input`, `-i` | Yes | — | Path to the SQL schema file |
-| `--graph` | No | false | Show graph structure summary (nodes, edges, dependencies) |
-| `--semantic` | No | false | Show semantic role inference per table |
-| `--verbose`, `-v` | No | false | Enable debug logging and show all summaries |
-| `--config` | No | — | Path to YAML config file |
-
-### Examples
-
-**Quick schema overview:**
-```bash
+# Quick overview (tables, columns, enums)
 synthgraph inspect --input schema.sql
-```
 
-**Full analysis with graph and semantics:**
-```bash
-synthgraph inspect --input schema.sql --graph --semantic
-```
+# Show graph structure (how tables relate)
+synthgraph inspect --input schema.sql --graph
 
-**Verbose mode (all summaries + debug logs):**
-```bash
+# Show semantic analysis (what each table "means")
+synthgraph inspect --input schema.sql --semantic
+
+# Full analysis
 synthgraph inspect --input schema.sql -v
 ```
+
+### Example output
+
+```
+Schema Overview
+===============
+Tables: 3
+Enums:  1
+
+Table: users
+  Columns: 6
+  Primary Key: id
+    id          integer PK
+    email       text NOT NULL
+    created_at  timestamp DEFAULT NOW()
+    ...
+```
+
+### All flags
+
+| Flag | Short | Default | What it does |
+|------|-------|---------|-------------|
+| `--input` | `-i` | — | Path to SQL schema file (required) |
+| `--graph` | — | false | Show table dependency graph |
+| `--semantic` | — | false | Show semantic table roles |
+| `--verbose` | `-v` | false | Show everything |
 
 ---
 
 ## `synthgraph version`
 
-Prints version and repository information.
-
-### Usage
+Prints the installed version.
 
 ```bash
 synthgraph version
+# → synthgraph version 0.1.0
 ```
 
 ---
 
-## Configuration File
+## FAQ
 
-All flags can be specified in a YAML config file and passed with `--config`.
+### "gcc: error: unrecognized command-line option"
 
-```yaml
-# synthgraph.yaml
-verbose: false
-
-generate:
-  input: schema.sql
-  output: data.csv
-  format: csv
-  rows: 100
-  seed: 42
-  schema-name: public
-
-inspect:
-  input: schema.sql
-  graph: true
-  semantic: true
-```
-
-CLI flags **always take precedence** over config file values. Use `--init-config` to generate a template:
-
+You're on Windows with a GCC version mismatch. Install the **ucrt64** variant of MinGW-w64:
 ```bash
-synthgraph generate --init-config
+pacman -S mingw-w64-ucrt-x86_64-gcc
 ```
+Make sure `where gcc` points to `C:\msys64\ucrt64\bin\gcc.exe`.
 
----
+### "postgres.h: No such file or directory"
 
-## Exit Codes
+The parser needs PostgreSQL headers during compilation. On Linux: `sudo apt-get install libpq-dev`. On macOS: `brew install libpq`. On Windows: MinGW-w64 includes everything needed.
+
+### Exit codes
 
 | Code | Meaning |
-|---|---|
+|------|---------|
 | `0` | Success |
-| `1` | Error (parsing failure, generation failure, invalid flags) |
+| `1` | Error (bad input, generation failure, etc.) |
+| `3` | Unresolvable circular dependency |
+| `4` | Can't satisfy a constraint (e.g., too many unique values) |
+
+### How do I get the same data twice?
+
+Use the same `--seed` value. SynthGraph is fully deterministic — same schema + same seed = identical output every time.
