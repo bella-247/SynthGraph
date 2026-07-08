@@ -153,7 +153,7 @@ var TEMPLATES = {
   ].join('\n')
 };
 
-function showPage(name) {
+function showPage(name, fromHash) {
   document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
   var page = document.getElementById('page-' + name);
   if (page) page.classList.add('active');
@@ -167,11 +167,18 @@ function showPage(name) {
     el.classList.add('active');
     el.setAttribute('aria-selected', 'true');
     el.setAttribute('tabindex', '0');
+    el.focus();
+  }
+  var titles = { schema: 'Schema', graph: 'Graph', generate: 'Generate', history: 'History', docs: 'Docs' };
+  document.title = (titles[name] || '') + ' — SynthGraph';
+  if (!fromHash && location.hash !== '#' + name) {
+    history.pushState(null, '', '#' + name);
   }
   if (name === 'history') loadHistory();
+  if (name === 'docs') showDocSection('getting-started');
   if (name === 'graph') {
     if (parsedModel) renderGraph();
-    else document.getElementById('cy').innerHTML = '<div class="loading-block" style="display:flex"><div style="color:var(--text3);font-size:13px">Parse a schema first to see the graph</div></div>';
+    else document.getElementById('cy').innerHTML = '<div class="loading-block" style="display:flex"><div style="font-size:14px;font-weight:600;color:var(--text2)">No schema loaded yet</div><div style="color:var(--text3);font-size:12px;margin-top:4px">Go to the Schema tab and paste SQL or pick a template to visualize your database structure.</div><button onclick="showPage(\'schema\')" style="margin-top:12px;padding:6px 16px">Go to Schema</button></div>';
   }
 }
 
@@ -192,7 +199,7 @@ document.addEventListener('keydown', function(e) {
     if (document.getElementById('detail-panel').classList.contains('open')) { closePanel(); return; }
     return;
   }
-  var map = {s:'schema', g:'graph', d:'generate', h:'history'};
+  var map = {s:'schema', g:'graph', d:'generate', h:'history', i:'docs'};
   if (map[e.key]) { showPage(map[e.key]); e.preventDefault(); }
 });
 
@@ -224,6 +231,7 @@ function loadFile(e) {
     document.getElementById('sql-input').value = ev.target.result;
     clearFieldError('sql-input-group');
     document.getElementById('template-select').value = '';
+    hideEmptyState();
     toast('File loaded: ' + file.name, 'info');
   };
   reader.readAsText(file);
@@ -232,7 +240,9 @@ function loadFile(e) {
 function loadTemplate(value) {
   if (!value || !TEMPLATES[value]) return;
   document.getElementById('sql-input').value = TEMPLATES[value];
+  document.getElementById('template-select').value = value;
   clearFieldError('sql-input-group');
+  hideEmptyState();
   toast('Template loaded', 'info');
 }
 
@@ -249,6 +259,16 @@ function showFieldError(groupId, message) {
   if (errorEl) errorEl.textContent = message;
 }
 
+function toggleEmptyState() {
+  var el = document.getElementById('schema-empty');
+  if (!el) return;
+  var sql = document.getElementById('sql-input').value.trim();
+  el.style.display = sql ? 'none' : 'flex';
+}
+function hideEmptyState() {
+  var el = document.getElementById('schema-empty');
+  if (el) el.style.display = 'none';
+}
 function toggleShortcuts() {
   var modal = document.getElementById('shortcuts-modal');
   modal.style.display = modal.style.display === 'none' ? 'flex' : 'none';
@@ -525,15 +545,14 @@ async function renderGraph() {
           label: n.table,
           roles: roles.join(', '),
           columns: n.columns,
-          isJunction: n.is_junction
-        },
-        style: {'background-color': nodeColor(roles), width: 60, height: 60}
+          isJunction: n.is_junction,
+          color: nodeColor(roles)
+        }
       });
     });
     gData.edges.forEach(function(e) {
       elements.push({
-        data: {id: e.id, source: e.source, target: e.target, label: e.label},
-        style: {'line-style': e.nullable ? 'dashed' : 'solid'}
+        data: {id: e.id, source: e.source, target: e.target, label: e.label, nullable: e.nullable}
       });
     });
     window.cyInstance = cytoscape({
@@ -544,6 +563,7 @@ async function renderGraph() {
           'label': 'data(label)', 'font-size': '11px',
           'text-valign': 'bottom', 'text-halign': 'center',
           'color': '#e2e8f0', 'text-wrap': 'wrap', 'text-max-width': '80px',
+          'background-color': 'data(color)', 'width': 60, 'height': 60,
           'border-width': 2, 'border-color': '#263040',
           'transition-property': 'background-color, border-color, opacity',
           'transition-duration': '0.2s'
@@ -555,7 +575,8 @@ async function renderGraph() {
           'width': 2, 'line-color': '#3b82f6',
           'target-arrow-color': '#3b82f6', 'target-arrow-shape': 'triangle',
           'curve-style': 'bezier', 'label': 'data(label)', 'font-size': '9px',
-          'color': '#94a3b8', 'text-rotation': 'autorotate'
+          'color': '#94a3b8', 'text-rotation': 'autorotate',
+          'line-style': 'solid'
         }},
         { selector: 'edge[?nullable]', style: {
           'line-style': 'dashed'
@@ -803,6 +824,25 @@ function showGenerationResult(data) {
   var resultEl = document.getElementById('gen-result');
   resultEl.style.display = 'block';
 
+  var doneEl = document.getElementById('gen-done');
+  if (!doneEl) {
+    doneEl = document.createElement('div');
+    doneEl.id = 'gen-done';
+    doneEl.className = 'gen-done';
+    var container = resultEl.querySelector('.card-header');
+    if (container) container.parentNode.insertBefore(doneEl, container);
+  }
+  doneEl.style.display = 'flex';
+  var hasWarnings = data.errors && data.errors.length;
+  doneEl.className = 'gen-done' + (hasWarnings ? ' gen-done-warn' : '');
+  doneEl.innerHTML = '<div class="gen-done-icon">' + (hasWarnings ? '&#9888;' : '&#10003;') + '</div>' +
+    '<div class="gen-done-text"><div class="gen-done-title">' + (hasWarnings ? 'Generated with warnings' : 'Generation complete') + '</div>' +
+    '<div class="gen-done-desc">' + data.tables + ' table(s) \u00B7 ' + (data.format || '').toUpperCase() + (hasWarnings ? ' \u00B7 ' + data.errors.length + ' warning(s)' : '') + '</div></div>' +
+    '<div class="gen-done-actions">' +
+    '<button onclick="downloadResult()" class="primary small">Download</button>' +
+    '<button onclick="showPage(\'history\')" class="small">View in History</button>' +
+    '<button onclick="resetGeneration()" class="small ghost">Generate More</button></div>';
+
   var metaEl = document.getElementById('result-meta');
   metaEl.innerHTML = '<span class="badge badge-blue">Job #' + data.job_id + '</span><span>' + data.tables + ' tables</span><span>' + (data.format || '').toUpperCase() + '</span>';
   if (data.errors && data.errors.length) {
@@ -816,33 +856,55 @@ function showGenerationResult(data) {
     warningsHtml += '</div>';
   }
 
+  var isSQL = (data.format === 'sql');
   var previewHtml = warningsHtml;
   var lines = data.data.split('\n').filter(function(l) { return l.trim(); });
-  var previewLines = lines.slice(0, 21);
-  var csvLines = previewLines.map(function(l) { return parseCSVLine(l); });
-  if (csvLines.length > 0) {
-    previewHtml += '<div class="data-preview"><table><thead><tr>';
-    (csvLines[0] || []).forEach(function(h) { previewHtml += '<th>' + escapeHTML(h) + '</th>'; });
-    previewHtml += '</tr></thead><tbody>';
-    for (var i = 1; i < csvLines.length; i++) {
-      previewHtml += '<tr>';
-      (csvLines[i] || []).forEach(function(c) { previewHtml += '<td onclick="copyCell(this)" title="Click to copy">' + escapeHTML(c) + '</td>'; });
-      previewHtml += '</tr>';
+
+  if (isSQL) {
+    // SQL output: show the first N INSERT statements as code blocks
+    var sqlPreviewLines = lines.slice(0, 10);
+    previewHtml += '<div class="data-preview"><pre style="padding:12px;margin:0;font-size:11px;line-height:1.6;color:var(--text);white-space:pre-wrap;word-break:break-word">';
+    sqlPreviewLines.forEach(function(l) { previewHtml += escapeHTML(l) + '\n'; });
+    if (lines.length > 10) previewHtml += '<span style="color:var(--text3)">... and ' + (lines.length - 10) + ' more lines</span>\n';
+    previewHtml += '</pre></div>';
+  } else {
+    // CSV output: parse and show as a preview table
+    var previewLines = lines.slice(0, 21);
+    var csvLines = previewLines.map(function(l) { return parseCSVLine(l); });
+    if (csvLines.length > 0) {
+      previewHtml += '<div class="data-preview"><table><thead><tr>';
+      (csvLines[0] || []).forEach(function(h) { previewHtml += '<th>' + escapeHTML(h) + '</th>'; });
+      previewHtml += '</tr></thead><tbody>';
+      for (var i = 1; i < csvLines.length; i++) {
+        previewHtml += '<tr>';
+        (csvLines[i] || []).forEach(function(c) { previewHtml += '<td onclick="copyCell(this)" title="Click to copy">' + escapeHTML(c) + '</td>'; });
+        previewHtml += '</tr>';
+      }
+      previewHtml += '</tbody></table></div>';
     }
-    previewHtml += '</tbody></table></div>';
   }
   document.getElementById('result-preview').innerHTML = previewHtml;
 
   document.getElementById('result-raw-text').value = data.data;
 
-  resultTab = 'preview';
-  document.querySelectorAll('#gen-result .tab').forEach(function(t) { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
-  document.querySelector('#gen-result .tab').classList.add('active');
-  document.querySelector('#gen-result .tab').setAttribute('aria-selected', 'true');
-  document.getElementById('result-preview').style.display = 'block';
-  document.getElementById('result-raw').style.display = 'none';
-
-  showProfiling(data.data, (csvLines[0] || []));
+  if (isSQL) {
+    // SQL format: default to Raw Data tab since CSV-style preview doesn't apply
+    resultTab = 'raw';
+    document.querySelectorAll('#gen-result .tab').forEach(function(t) { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+    document.querySelectorAll('#gen-result .tab')[1].classList.add('active');
+    document.querySelectorAll('#gen-result .tab')[1].setAttribute('aria-selected', 'true');
+    document.getElementById('result-preview').style.display = 'none';
+    document.getElementById('result-raw').style.display = 'block';
+    document.getElementById('result-profiling').style.display = 'none';
+  } else {
+    resultTab = 'preview';
+    document.querySelectorAll('#gen-result .tab').forEach(function(t) { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+    document.querySelector('#gen-result .tab').classList.add('active');
+    document.querySelector('#gen-result .tab').setAttribute('aria-selected', 'true');
+    document.getElementById('result-preview').style.display = 'block';
+    document.getElementById('result-raw').style.display = 'none';
+    showProfiling(data.data, (lines.slice(0, 1).length ? lines.slice(0, 1).map(function(l) { return parseCSVLine(l); })[0] : []));
+  }
 }
 
 function showProfiling(rawData, headers) {
@@ -1064,11 +1126,211 @@ function deleteJob(jobId) {
   });
 }
 
+function resetGeneration() {
+  document.getElementById('gen-result').style.display = 'none';
+  document.getElementById('gen-progress').style.display = 'none';
+  document.getElementById('gen-pipeline').style.display = 'none';
+  var doneEl = document.getElementById('gen-done');
+  if (doneEl) doneEl.style.display = 'none';
+  document.getElementById('generate-btn').disabled = false;
+  document.getElementById('generate-btn').textContent = 'Generate';
+}
 function closePanel() {
   document.getElementById('detail-panel').classList.remove('open');
 }
 
 (function() {
+  var hash = location.hash.replace('#', '');
+  if (hash && ['schema','graph','generate','history','docs'].indexOf(hash) !== -1) {
+    showPage(hash, true);
+  }
   var activePage = document.querySelector('.page.active');
   if (activePage && activePage.id === 'page-history') loadHistory();
 })();
+
+window.addEventListener('hashchange', function() {
+  var hash = location.hash.replace('#', '');
+  if (hash && ['schema','graph','generate','history','docs'].indexOf(hash) !== -1) {
+    showPage(hash, true);
+  }
+  if (hash === 'docs') showDocSection('getting-started');
+});
+
+document.getElementById('sql-input').addEventListener('input', toggleEmptyState);
+
+/* ─── Docs Page ─── */
+
+var DOCS = {
+  'getting-started': {
+    title: 'Getting Started',
+    content: '<p class="docs-lead">New to SynthGraph? This guide walks you through your first generation from start to finish.</p>' +
+      '<section class="docs-section"><h3>What is SynthGraph?</h3>' +
+      '<p>SynthGraph is a tool that reads your SQL database schema and automatically generates realistic test data for it. It understands foreign keys, unique constraints, enum values, and every other rule in your schema — so the data it produces runs clean, first try.</p>' +
+      '<p>Think of it as a smart "seed file" generator that figures out the right order to insert data and makes sure every relationship is valid.</p></section>' +
+
+      '<section class="docs-section"><h3>Prerequisites</h3>' +
+      '<ul><li><strong>Go 1.21+</strong> — run <code>go version</code> to check</li>' +
+      '<li><strong>GCC</strong> — needed for the PostgreSQL parser (CGO)</li>' +
+      '<li><strong>A SQL schema</strong> — PostgreSQL DDL, or pick a built-in template</li></ul></section>' +
+
+      '<section class="docs-section"><h3>Step 1: Start the web app</h3>' +
+      '<p>Open a terminal in the SynthGraph directory and run:</p>' +
+      '<pre><code>CGO_ENABLED=1 go run ./cmd/synthgraph-web/</code></pre>' +
+      '<p>Open your browser to <a href="http://localhost:8080" target="_blank">http://localhost:8080</a>.</p></section>' +
+
+      '<section class="docs-section"><h3>Step 2: Load a schema</h3>' +
+      '<p>On the <strong>Schema</strong> page, you have three options:</p>' +
+      '<ol><li><strong>Pick a template</strong> — choose "E-Commerce", "Blog", or "SaaS" from the dropdown. This is the fastest way to try SynthGraph.</li>' +
+      '<li><strong>Paste SQL</strong> — copy-paste your own PostgreSQL DDL into the text area.</li>' +
+      '<li><strong>Upload a file</strong> — click the file input to select a <code>.sql</code> file from your computer.</li></ol>' +
+      '<p>Then click <strong>Parse Schema</strong>. SynthGraph will analyze your tables, columns, and constraints.</p></section>' +
+
+      '<section class="docs-section"><h3>Step 3: Explore the graph</h3>' +
+      '<p>Switch to the <strong>Graph</strong> tab to see your schema as an interactive diagram. Each table is a circle, and arrows show foreign key relationships.</p>' +
+      '<ul><li>Click any node to see its columns and relationships</li>' +
+      '<li>Drag nodes to rearrange the layout</li>' +
+      '<li>Use the search box to find specific tables</li>' +
+      '<li>Click "Export PNG" to save the graph as an image</li></ul></section>' +
+
+      '<section class="docs-section"><h3>Step 4: Generate data</h3>' +
+      '<p>Go to the <strong>Generate</strong> tab. The SQL from your schema should already be filled in.</p>' +
+      '<ol><li>Set <strong>Rows per table</strong> — start with 10 for a quick test</li>' +
+      '<li>Choose <strong>Output format</strong> — SQL or CSV</li>' +
+      '<li>Click <strong>Generate</strong></li></ol>' +
+      '<p>Watch the progress bar as SynthGraph parses, analyzes, generates, and exports your data. When it\'s done, a completion banner appears with buttons to download, view in history, or generate more.</p></section>' +
+
+      '<section class="docs-section"><h3>Step 5: Download your seed file</h3>' +
+      '<p>Once generation is complete:</p>' +
+      '<ul><li>Click <strong>Download</strong> to save the file</li>' +
+      '<li>Click <strong>Copy</strong> to copy the data to your clipboard</li>' +
+      '<li>Switch between <strong>Preview</strong> and <strong>Raw Data</strong> tabs to inspect the output</li>' +
+      '<li>Go to <strong>History</strong> to find all your past jobs</li></ul>' +
+      '<p>That\'s it! You\'ve generated your first synthetic dataset.</p></section>'
+  },
+
+  'web-app-guide': {
+    title: 'Web App Guide',
+    content: '<p class="docs-lead">A detailed walkthrough of each page in the SynthGraph web application.</p>' +
+
+      '<section class="docs-section"><h3>Schema Page</h3>' +
+      '<p>The starting point. Paste your PostgreSQL DDL, pick a template, or upload a file. After parsing, you\'ll see each table listed with its columns, types, and constraints — all color-coded:</p>' +
+      '<ul><li><span class="badge badge-yellow small">PK</span> — Primary key</li>' +
+      '<li><span class="badge badge-blue small">FK</span> — Foreign key</li>' +
+      '<li><span class="badge badge-purple small">UQ</span> — Unique constraint</li>' +
+      '<li><span class="badge badge-orange small">CHK</span> — Check constraint</li></ul>' +
+      '<p>Click each table header to expand it and see full column details, FK targets, and constraint expressions.</p></section>' +
+
+      '<section class="docs-section"><h3>Graph Page</h3>' +
+      '<p>An interactive Cytoscape.js visualization of your schema. Tables appear as colored nodes:</p>' +
+      '<ul><li><span style="color:var(--orange)">Orange</span> — Junction tables (many-to-many relationships)</li>' +
+      '<li><span style="color:var(--accent)">Blue</span> — Hierarchical tables (self-referencing)</li>' +
+      '<li><span style="color:var(--green)">Green</span> — Transactional tables (orders, payments, etc.)</li>' +
+      '<li><span style="color:var(--yellow)">Yellow</span> — Lookup tables (statuses, types, etc.)</li></ul>' +
+      '<p>Dashed edges represent nullable foreign keys. Click any node to open a detail panel with columns, FKs, and relationships.</p></section>' +
+
+      '<section class="docs-section"><h3>Generate Page</h3>' +
+      '<p>Configure and run data generation. Set the number of rows per table, choose a random seed (same seed = same data every time), and pick SQL or CSV output.</p>' +
+      '<p>A pipeline indicator shows progress through each stage: Parsing &rarr; Analyzing &rarr; Generating &rarr; Exporting. The completion banner lets you download, view in history, or generate more data.</p>' +
+      '<p>For CSV output, the preview includes a <strong>Data Profile</strong> section showing column types, null counts, distinct values, and sample data for each column.</p></section>' +
+
+      '<section class="docs-section"><h3>History Page</h3>' +
+      '<p>Browse all past generation jobs, newest first. Each entry shows job ID, timestamp, table count, format, row count, and status. Use the action buttons to view, download, or delete individual jobs.</p></section>' +
+
+      '<section class="docs-section"><h3>Keyboard Shortcuts</h3>' +
+      '<p>Press <kbd>?</kbd> at any time to see the full list of shortcuts:</p>' +
+      '<div class="shortcuts-grid"><div><kbd>S</kbd> Schema</div><div><kbd>G</kbd> Graph</div><div><kbd>D</kbd> Generate</div><div><kbd>H</kbd> History</div><div><kbd>I</kbd> Docs</div><div><kbd>?</kbd> Shortcuts</div></div>' +
+      '<p>Use <kbd>Ctrl+Enter</kbd> to parse a schema or start generation from any input field.</p></section>'
+  },
+
+  'cli-guide': {
+    title: 'CLI Guide',
+    content: '<p class="docs-lead">Using SynthGraph from the command line for scripts, CI pipelines, and automation.</p>' +
+
+      '<section class="docs-section"><h3>Installation</h3>' +
+      '<pre><code>CGO_ENABLED=1 go build -o synthgraph.exe ./cmd/synthgraph/</code></pre>' +
+      '<p>This creates a single binary called <code>synthgraph.exe</code> in the current directory.</p></section>' +
+
+      '<section class="docs-section"><h3>Basic usage</h3>' +
+      '<p>Generate 10 rows per table (default) from a schema file:</p>' +
+      '<pre><code>synthgraph generate --input schema.sql</code></pre>' +
+      '<p>Generate 100 rows and save to a file:</p>' +
+      '<pre><code>synthgraph generate --input schema.sql --rows 100 --output seed.sql</code></pre>' +
+      '<p>Generate CSV instead of SQL:</p>' +
+      '<pre><code>synthgraph generate --input schema.sql --rows 50 --format csv --output data.csv</code></pre></section>' +
+
+      '<section class="docs-section"><h3>Inspecting a schema</h3>' +
+      '<p>See what SynthGraph discovers before generating anything:</p>' +
+      '<pre><code>synthgraph inspect --input schema.sql --graph --semantic</code></pre>' +
+      '<p>This shows your table dependency graph, detected cycles, and what role each table plays (entity, junction, lookup, etc.).</p></section>' +
+
+      '<section class="docs-section"><h3>Reproducible output</h3>' +
+      '<p>The <code>--seed</code> flag controls all randomness. Same schema + same seed = identical output every time:</p>' +
+      '<pre><code>synthgraph generate --input schema.sql --seed 42 --rows 100</code></pre>' +
+      '<p>This is essential for reproducible test environments.</p></section>' +
+
+      '<section class="docs-section"><h3>Configuration files</h3>' +
+      '<p>Store your settings in a YAML file instead of passing flags every time:</p>' +
+      '<pre><code># Generate an empty config template\nsynthgraph generate --init-config\n\n# Run using the config\nsynthgraph generate --config synthgraph.yaml</code></pre></section>'
+  },
+
+  'faq': {
+    title: 'Frequently Asked Questions',
+    content: '<p class="docs-lead">Common questions about SynthGraph.</p>' +
+
+      '<section class="docs-section faq-item"><h3>Why do I need GCC / CGO?</h3>' +
+      '<p>SynthGraph uses PostgreSQL\'s own C parser (<code>pg_query_go</code>) to read SQL schemas reliably. This requires CGO. Windows users should install <a href="https://www.msys2.org/" target="_blank">MSYS2</a> and run <code>pacman -S mingw-w64-ucrt-x86_64-gcc</code>, then add <code>C:\\msys64\\ucrt64\\bin</code> to their PATH.</p></section>' +
+
+      '<section class="docs-section faq-item"><h3>Can I use MySQL or other databases?</h3>' +
+      '<p>Currently only PostgreSQL DDL is supported. MySQL, SQLite, and Prisma support are planned for future releases. The architecture is designed so adding new parsers doesn\'t require changing the generation engine.</p></section>' +
+
+      '<section class="docs-section faq-item"><h3>Will the same input always produce the same output?</h3>' +
+      '<p>Yes — SynthGraph is fully deterministic. The same schema file, row count, and seed value always produce identical output. This is a core design goal for reproducible test environments.</p></section>' +
+
+      '<section class="docs-section faq-item"><h3>How does it handle circular foreign keys?</h3>' +
+      '<p>SynthGraph detects circular dependencies (e.g., <code>users &rarr; organizations &rarr; users</code>) using Tarjan\'s algorithm. If at least one FK in the cycle is nullable, it inserts NULL initially and backfills the values with UPDATE statements. If no nullable breakpoint exists, it tells you which column to make nullable.</p></section>' +
+
+      '<section class="docs-section faq-item"><h3>What output formats are supported?</h3>' +
+      '<p>SQL (INSERT statements wrapped in a transaction) and CSV (RFC 4180, one file per table). JSON, Parquet, and PostgreSQL COPY format are planned.</p></section>' +
+
+      '<section class="docs-section faq-item"><h3>How do I get help or report a bug?</h3>' +
+      '<p>Open an issue on <a href="https://github.com/bella-247/SynthGraph/issues" target="_blank">GitHub</a>. For bugs, include your SynthGraph version, OS, the SQL schema (or a minimal reproduction), and the exact command and error message.</p></section>' +
+
+      '<section class="docs-section faq-item"><h3>Can I contribute?</h3>' +
+      '<p>Absolutely! See <a href="https://github.com/bella-247/SynthGraph/blob/dev/docs/CONTRIBUTING.md" target="_blank">CONTRIBUTING.md</a> for guidelines. Look for issues labeled <code>good first issue</code> for beginner-friendly tasks.</p></section>'
+  },
+
+  'about': {
+    title: 'About',
+    content: '<p class="docs-lead">Version information and links.</p>' +
+      '<section class="docs-section">' +
+      '<table class="about-table"><tr><td>Version</td><td>1.0.0</td></tr>' +
+      '<tr><td>License</td><td>MIT</td></tr>' +
+      '<tr><td>Language</td><td>Go</td></tr>' +
+      '<tr><td>Repository</td><td><a href="https://github.com/bella-247/SynthGraph" target="_blank">github.com/bella-247/SynthGraph</a></td></tr></table>' +
+      '</section>' +
+      '<section class="docs-section"><h3>Documentation</h3>' +
+      '<ul><li><a href="https://github.com/bella-247/SynthGraph/blob/dev/README.md" target="_blank">README</a> — Overview and quick start</li>' +
+      '<li><a href="https://github.com/bella-247/SynthGraph/blob/dev/docs/cli_reference.md" target="_blank">CLI Reference</a> — Full command reference</li>' +
+      '<li><a href="https://github.com/bella-247/SynthGraph/blob/dev/docs/DEVELOPMENT.md" target="_blank">Development Guide</a> — Building and extending</li>' +
+      '<li><a href="https://github.com/bella-247/SynthGraph/blob/dev/docs/ARCHITECTURE.md" target="_blank">Architecture</a> — Internal design</li>' +
+      '<li><a href="https://github.com/bella-247/SynthGraph/blob/dev/docs/CONTRIBUTING.md" target="_blank">Contributing</a> — How to contribute</li></ul></section>'
+  }
+};
+
+function showDocSection(sectionId) {
+  var section = DOCS[sectionId];
+  if (!section) return;
+  var contentEl = document.getElementById('docs-content');
+  if (!contentEl) return;
+  contentEl.innerHTML = '<h2>' + section.title + '</h2>' + section.content;
+  contentEl.scrollTop = 0;
+  document.querySelectorAll('.docs-sidebar-link').forEach(function(l) {
+    l.classList.remove('active');
+    l.setAttribute('aria-selected', 'false');
+  });
+  var link = document.querySelector('.docs-sidebar-link[data-section="' + sectionId + '"]');
+  if (link) {
+    link.classList.add('active');
+    link.setAttribute('aria-selected', 'true');
+  }
+}

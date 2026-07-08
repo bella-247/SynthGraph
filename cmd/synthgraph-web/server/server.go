@@ -70,6 +70,7 @@ func New(indexHTML string, stylesCSS string, appJS string, jobPersistPath string
 	requestMux.HandleFunc("GET /api/generate/stream", server.handleGenerateStream)
 	requestMux.HandleFunc("GET /api/health", server.handleHealth)
 	requestMux.HandleFunc("GET /", server.handleFrontend)
+	requestMux.HandleFunc("GET /favicon.ico", server.handleFavicon)
 	requestMux.HandleFunc("GET /styles.css", server.handleStyles)
 	requestMux.HandleFunc("GET /app.js", server.handleAppJS)
 

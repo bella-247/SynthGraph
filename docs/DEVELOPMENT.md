@@ -1,5 +1,9 @@
 # SynthGraph — Development Guide
 
+> **Who this is for:** Developers who want to build, test, or contribute to SynthGraph. Covers local setup, running tests, adding new features, and debugging.
+>
+> **If you just want to use SynthGraph:** See the [README](../README.md) (web app) or the [CLI Reference](cli_reference.md) (command line).
+
 Everything you need to build, test, run, and extend SynthGraph during development.
 
 ---

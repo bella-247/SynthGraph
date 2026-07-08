@@ -1,401 +1,181 @@
 # SynthGraph
 
-**Generate mathematically valid, constraint-compliant synthetic data from your SQL schema — in a single command.**
+**Turn your SQL schema into realistic test data — automatically.**
 
-```bash
-synthgraph generate --schema schema.sql --rows 1000 --output seed.sql
-```
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8.svg)](https://golang.org)
-[![Status](https://img.shields.io/badge/Status-Alpha-orange.svg)]()
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
-
----
-
-## The Problem
-
-Every synthetic data generator has the same flaw. It generates values in isolation.
+SynthGraph reads your database schema, figures out how tables relate to each other, and generates sample data that respects every rule: foreign keys match up, emails are unique, enum values are valid, and nothing breaks.
 
 ```sql
--- Your schema
-CREATE TABLE users   (id INT PRIMARY KEY);
+-- Given this schema
+CREATE TABLE users   (id INT PRIMARY KEY, email VARCHAR(255) UNIQUE);
 CREATE TABLE orders  (id INT PRIMARY KEY, user_id INT REFERENCES users(id));
+
+-- SynthGraph generates data where every order.user_id
+-- actually exists in users.id — guaranteed.
 ```
 
-```
--- What Faker gives you
-INSERT INTO orders (user_id) VALUES (9999);
--- ERROR: foreign key constraint violation. user 9999 does not exist.
-```
-
-Referential integrity is broken. Unique constraints are violated. Tests fail. You spend an hour debugging data instead of your application.
+No manual seed files. No foreign key violations. No frustration.
 
 ---
 
-## The SynthGraph Approach
+## Two ways to use it
 
-SynthGraph treats your schema as what it actually is — a **directed graph**.
+### 1. Web app (easiest — recommended for beginners)
 
-```
-users ──────────► orders ──────────► payments
-                              │
-                              └──────► refunds
-```
-
-Tables are nodes. Foreign keys are edges. SynthGraph resolves the correct generation order with **topological sort**, detects circular dependencies with **Tarjan's algorithm**, and generates every value with full awareness of every constraint.
-
-The result: a seed file that runs against your database without a single violation.
-
----
-
-## Features
-
-**Constraint-aware generation**
-Every primary key is unique. Every foreign key references a value that exists. Every unique constraint is respected. Every enum column only uses declared values.
-
-**Graph-based dependency resolution**
-Topological sort ensures tables are always generated in the correct order. No more manually ordering your seed file.
-
-**Circular dependency handling**
-SynthGraph detects cycles and resolves them automatically using nullable deferred insertion — generating rows with temporary NULLs and backfilling after both tables exist.
-
-**Semantic field generation**
-A column named `email` gets a real email. `country` gets a real country. `created_at` gets a realistic timestamp. Column names inform generation, not just types.
-
-**Deterministic output**
-Same schema + same seed = identical output every time. Reproducible test environments guaranteed.
-
-**Schema inspection**
-Understand your schema's dependency graph before generating anything.
-
----
-
-## Quick Start
-
-### Installation
+A full visual tool that takes you from schema to download in 5 steps.
 
 ```bash
-# Install globally via go install (recommended — puts synthgraph in $GOPATH/bin)
-CGO_ENABLED=1 go install ./cmd/synthgraph@latest
-
-# Or build from source
-CGO_ENABLED=1 go build -o synthgraph ./cmd/synthgraph/
-
-# Or run directly
-CGO_ENABLED=1 go run ./cmd/synthgraph/ generate --input schema.sql --rows 100
+CGO_ENABLED=1 go run ./cmd/synthgraph-web/
 ```
 
-### Generate a seed file
+Open **http://localhost:8080** and follow the pipeline:
+
+| Step | What happens |
+|------|-------------|
+| **Schema** | Paste your SQL or pick a template to start |
+| **Graph** | See your schema as an interactive node diagram |
+| **Generate** | Set row count and format, click Generate |
+| **Download** | Get your seed file as SQL or CSV |
+| **History** | Browse and re-download past jobs |
+
+> **Tip:** Don't have a schema handy? Pick the "E-Commerce" template to see how it works.
+
+### 2. CLI (for scripts, CI, and power users)
+
+Same engine, but from the terminal. Perfect for automation.
 
 ```bash
 synthgraph generate --input schema.sql --rows 100 --output seed.sql
 ```
 
-### Inspect your schema graph
+See the [CLI Reference](docs/cli_reference.md) for all commands and flags.
+
+---
+
+## What makes SynthGraph different?
+
+Other generators create values in isolation — they don't know that `orders.user_id` must match a real user. SynthGraph treats your schema as a **dependency graph**:
+
+1. **Reads your schema** — understands tables, columns, and every constraint
+2. **Builds a dependency map** — figures out which tables need to exist before others
+3. **Generates in the right order** — parents before children, referenced before referencing
+4. **Resolves circular dependencies** — handles tricky cases like `users → organizations → users` automatically
+
+The result: data that **just works**, every time.
+
+### Constraint support
+
+| Constraint | Handled? |
+|-----------|----------|
+| Primary keys (single + composite) | ✅ |
+| Foreign keys (single + composite) | ✅ |
+| Unique constraints | ✅ |
+| NOT NULL | ✅ |
+| Enum values | ✅ |
+| VARCHAR / DECIMAL length | ✅ |
+| Circular FK dependencies | ✅ |
+
+---
+
+## Quick start: Web app
 
 ```bash
-synthgraph inspect --input schema.sql --graph --semantic
-```
+# 1. Make sure Go is installed (1.21+)
+go version
 
-### Visualize (web application)
-
-```bash
-# Start the SynthGraph web UI (REST API + embedded SPA)
+# 2. Clone and start the web app
+git clone https://github.com/bella-247/SynthGraph.git
+cd SynthGraph
 CGO_ENABLED=1 go run ./cmd/synthgraph-web/
-# Open http://localhost:8080
+
+# 3. Open http://localhost:8080
 ```
 
-The web app walks you through the full pipeline:
-1. **Schema** — paste or upload your SQL DDL
-2. **Graph** — explore your schema as an interactive graph (Cytoscape.js)
-3. **Semantic** — see inferred table roles (entity, junction, lookup, transactional)
-4. **Generate** — configure row count, seed, format, then run
-5. **Download** — get CSV or SQL output
+Then:
+1. On the **Schema** page, pick a template or paste your SQL
+2. Click "Parse Schema" — the app analyzes your tables
+3. Go to **Graph** to see relationships visually
+4. Go to **Generate**, set rows (try 10), click Generate
+5. Download your seed file
 
-For a lighter development-only visualizer:
+---
+
+## Quick start: CLI
 
 ```bash
-CGO_ENABLED=1 go run ./cmd/serveviz/ --schema schema.sql
-```
+# Build the CLI
+CGO_ENABLED=1 go build -o synthgraph.exe ./cmd/synthgraph/
 
-```
-SynthGraph Schema Inspection
-─────────────────────────────────────────
-Schema File:        schema.sql
-Tables:             8
-Relationships:      11
-Cycles Detected:    1
-Deepest Chain:      4
+# Generate 50 rows per table
+./synthgraph.exe generate --input testdata/schemas/ecommerce.sql --rows 50
 
-Cycle Details:
-  Cycle 1: users → organizations → users
-  Breakpoint: organizations.owner_id (nullable) ✓
+# Output to a file
+./synthgraph.exe generate --input testdata/schemas/ecommerce.sql --rows 50 --output seed.sql
 
-Generation Order:
-  1. roles
-  2. users                [deferred FK: organization_id]
-  3. organizations
-  4. products
-  5. orders
-  6. order_items
-  7. payments
-  8. refunds
-─────────────────────────────────────────
+# See what your schema looks like
+./synthgraph.exe inspect --input testdata/schemas/ecommerce.sql --graph --semantic
 ```
 
 ---
 
-## Example
+## Example walkthrough
 
-**Input: `ecommerce.sql`**
-
+**Input** (`ecommerce.sql`):
 ```sql
 CREATE TABLE users (
     id         SERIAL PRIMARY KEY,
-    email      VARCHAR(255) NOT NULL UNIQUE,
+    email      VARCHAR(255) UNIQUE NOT NULL,
     first_name VARCHAR(100) NOT NULL,
-    last_name  VARCHAR(100) NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    created_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE TABLE products (
-    id          SERIAL PRIMARY KEY,
-    name        VARCHAR(255) NOT NULL,
-    price       DECIMAL(10,2) NOT NULL,
-    description TEXT
+    id    SERIAL PRIMARY KEY,
+    name  VARCHAR(255) NOT NULL,
+    price DECIMAL(10,2) NOT NULL
 );
 
 CREATE TABLE orders (
-    id         SERIAL PRIMARY KEY,
-    user_id    INT NOT NULL REFERENCES users(id),
-    total      DECIMAL(10,2) NOT NULL,
-    status     VARCHAR(50) NOT NULL DEFAULT 'pending',
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    id      SERIAL PRIMARY KEY,
+    user_id INT NOT NULL REFERENCES users(id),
+    total   DECIMAL(10,2) NOT NULL,
+    status  VARCHAR(50) DEFAULT 'pending'
 );
 ```
 
-**Command:**
-
-```bash
-synthgraph generate --schema ecommerce.sql --rows 50
-```
-
-**Output:**
-
+**Output** (`seed.sql`):
 ```sql
--- Generated by SynthGraph v1.0.0
--- Schema: ecommerce.sql
--- Rows per table: 50
--- Seed: 42
-
 BEGIN;
-
--- Table: users (50 rows)
-INSERT INTO users (id, email, first_name, last_name, created_at)
-VALUES
-  (1, 'alice.johnson@example.com', 'Alice', 'Johnson', '2024-03-15 09:22:11'),
-  (2, 'bob.smith@example.net', 'Bob', 'Smith', '2024-07-02 14:55:30'),
-  ...
-;
-
--- Table: products (50 rows)
-INSERT INTO products (id, name, price, description)
-VALUES
-  (1, 'Wireless Headphones', 89.99, 'Lorem ipsum dolor sit amet.'),
-  ...
-;
-
--- Table: orders (50 rows)
-INSERT INTO orders (id, user_id, total, status, created_at)
-VALUES
-  (1, 23, 142.50, 'pending', '2024-09-10 11:30:00'),
-  -- user_id 23 is guaranteed to exist in users table
-  ...
-;
-
+INSERT INTO users (id, email, first_name, created_at) VALUES
+  (1, 'alice@example.com', 'Alice', '2024-03-15 09:22:11'), ...
+INSERT INTO products (id, name, price) VALUES
+  (1, 'Wireless Headphones', 89.99), ...
+INSERT INTO orders (id, user_id, total, status) VALUES
+  (1, 23, 142.50, 'pending'), ...
 COMMIT;
 ```
 
-Every FK value exists. Every email is unique. The file runs clean.
+Every FK value exists. Every email is unique. The file runs clean, first try.
 
 ---
 
-## Supported Constraints
-
-| Constraint | Status |
-|---|---|
-| Primary Key (single + composite) | ✅ V1 |
-| Foreign Key (single + composite) | ✅ V1 |
-| Unique (single + composite) | ✅ V1 |
-| NOT NULL | ✅ V1 |
-| Enum values | ✅ V1 |
-| VARCHAR length | ✅ V1 |
-| DECIMAL precision/scale | ✅ V1 |
-| Circular FK dependencies | ✅ V1 |
-| CHECK constraints | ⚠️ V2 (parsed, not enforced) |
-
-**Parser Note:** SynthGraph v1 parses PostgreSQL DDL via `pg_query_go` (PostgreSQL's own parser wrapped in Go). Every constraint PostgreSQL supports is automatically supported. Future versions will add MySQL, SQLite, and Prisma support by implementing additional translators — the core engine (graph, planner, generator) remains unchanged.
-
----
-
-## CLI Reference
-
-### `generate`
+## Architecture in one sentence
 
 ```
-synthgraph generate --input <path> [flags]
-
-Flags:
-  --input, -i       Path to SQL schema file (required)
-  --output, -o      Output file path (default: stdout)
-  --format, -f      Output format: sql, csv (default: sql)
-  --rows, -r        Rows per table (default: 10)
-  --seed, -s        RNG seed for determinism (default: 42)
-  --schema-name     Schema name for SQL output (optional)
+SQL → Parser → Graph → Planner → Generator → Validator → SQL/CSV
 ```
 
-### `inspect`
-
-```
-synthgraph inspect --input <path> [flags]
-
-Flags:
-  --input, -i   Path to SQL schema file (required)
-  --graph        Show graph structure summary
-  --semantic     Show semantic inference summary
-  -v             Verbose output (--graph + --semantic)
-```
-
-### `version`
-
-```
-synthgraph version
-```
-
-### `synthgraph-web` (web application)
-
-```
-go run ./cmd/synthgraph-web/ [--port 8080]
-
-Starts the SynthGraph web application with a REST API and embedded SPA.
-Open http://localhost:8080 for an interactive pipeline UI (schema → graph → semantic → generate → download).
-```
-
-### `serveviz` (development-only visualizer)
-
-```
-go run ./cmd/serveviz/ --schema <path> [--port 8080]
-
-Lightweight read-only graph visualizer. No generation UI.
-Go to http://localhost:8080 in your browser.
-```
-
----
-
-## Architecture
-
-SynthGraph is a strict linear pipeline. Every stage consumes one typed artifact and produces another.
-
-```
-SQL File
-    │
-    ▼
-  Parser
-    │
-    ▼
-  AST
-    │
-    ▼
-  Translator (extract → normalize → link → validate → build)
-    │
-    ▼
-  schema.Model     ◄── parser-agnostic canonical IR
-    │
-    ▼
-  Graph Builder
-    │
-    ▼
-  SchemaGraph
-    │
-    ▼
-  Planner (topological sort + cycle detection)
-    │
-    ▼
-  GenerationPlan
-    │
-    ▼
-  Generator (per-table seeded RNG)
-    │
-    ▼
-  Dataset
-    │
-    ▼
-  Exporter
-    │
-    ▼
-  SQL INSERT / CSV
-```
-
-Every parser produces the same `schema.Model`. The graph engine, planner, generator, and exporter never know what format the schema came from.
-
-Full architecture documentation: [docs/architecture.md](docs/architecture.md)
-
----
-
-## Roadmap
-
-**V1 (Current)**
-- PostgreSQL DDL parser (via `pg_query_go`)
-- AST translator (PostgreSQL → schema.Model)
-- Graph-based dependency resolution
-- Full constraint-aware generation
-- SQL INSERT + CSV export
-- `generate` and `inspect` CLI
-
-**V2**
-- Additional schema parsers: MySQL, SQLite, Prisma (each with translator layer)
-- Statistical distributions (normal, exponential)
-- Business rule engine
-- Schema diff command
-- JSON and PostgreSQL COPY exporters
-
-**V3+**
-- Web application (reuses same core engine)
-- REST API server mode
-- Direct database insertion
-
-Full roadmap: [ROADMAP.md](ROADMAP.md)
+Each stage is a pure function that produces one artifact and feeds it to the next. Full details in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
 ## Development
 
-See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the complete development guide covering:
-
-- **Prerequisites** — Go, GCC, MinGW-w64 setup
-- **Building** — CLI, web app, with and without CGO
-- **Testing** — all packages, specific packages, specific tests
-- **Running the CLI** — every flag for `generate`, `inspect`, `version`
-- **Running the Web App** — start and use the SPA pipeline UI
-- **Schema Visualizer** — older lightweight development visualizer
-- **Extending** — adding parser dialects, inference rules, type generators
-- **Debugging** — tips and common issues
-
----
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for building, testing, and extending.
 
 ## Contributing
 
-Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
-
-**Good first issues:**
-- Add a new semantic field generator
-- Expand translator test coverage for a PostgreSQL edge case
-- Add a new test schema to the golden test suite
-- Improve error messages
-
----
+Contributions welcome — see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md). Good first issues: new semantic field generators, test coverage, better error messages.
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT — see [LICENSE](LICENSE).
