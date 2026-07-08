@@ -51,6 +51,18 @@
       <textarea id="sql-input" rows="10" style="width:100%" placeholder="CREATE TABLE users (&#10;  id BIGSERIAL PRIMARY KEY,&#10;  email VARCHAR(255) UNIQUE NOT NULL,&#10;  created_at TIMESTAMP DEFAULT NOW()&#10);" aria-describedby="sql-error" spellcheck="false"></textarea>
       <div class="field-error" id="sql-error"></div>
     </div>
+    <div id="schema-empty" class="empty-state">
+      <div class="empty-state-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/><path d="M4 11v9h16v-9"/></svg>
+      </div>
+      <h3 class="empty-state-title">Start with a template</h3>
+      <p class="empty-state-desc">Pick a template above or paste your own SQL. Try one of these:</p>
+      <div class="empty-state-actions">
+        <button onclick="loadTemplate('ecommerce')" class="small">E-Commerce</button>
+        <button onclick="loadTemplate('blog')" class="small">Blog</button>
+        <button onclick="loadTemplate('saas')" class="small">SaaS</button>
+      </div>
+    </div>
     <div class="form-actions">
       <button class="primary" onclick="parseSchema()" id="parse-btn">Parse Schema</button>
       <span style="font-size:12px;color:var(--text3)">or</span>

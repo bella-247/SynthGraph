@@ -332,6 +332,11 @@ table tr:hover td{background:rgba(255,255,255,0.02)}
 .loading-spinner-sm{width:12px;height:12px;border-width:1.5px}
 @keyframes spin{to{transform:rotate(360deg)}}
 .loading-block{text-align:center;padding:40px;color:var(--text2);display:flex;flex-direction:column;align-items:center;gap:8px}
+.empty-state{text-align:center;padding:32px 20px;display:flex;flex-direction:column;align-items:center;gap:12px;border:1px dashed var(--border);border-radius:var(--radius);margin-top:16px}
+.empty-state-icon{color:var(--text3);opacity:0.6}
+.empty-state-title{font-size:15px;font-weight:600;color:var(--text);margin:0}
+.empty-state-desc{font-size:13px;color:var(--text2);margin:0;max-width:360px;line-height:1.5}
+.empty-state-actions{display:flex;gap:8px;margin-top:4px}
 
 @media (max-width:640px){
   .header{padding:0 12px;gap:10px;height:48px}

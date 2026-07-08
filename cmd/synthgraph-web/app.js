@@ -174,7 +174,7 @@ function showPage(name) {
   if (name === 'history') loadHistory();
   if (name === 'graph') {
     if (parsedModel) renderGraph();
-    else document.getElementById('cy').innerHTML = '<div class="loading-block" style="display:flex"><div style="color:var(--text3);font-size:13px">Parse a schema first to see the graph</div></div>';
+    else document.getElementById('cy').innerHTML = '<div class="loading-block" style="display:flex"><div style="font-size:14px;font-weight:600;color:var(--text2)">No schema loaded yet</div><div style="color:var(--text3);font-size:12px;margin-top:4px">Go to the Schema tab and paste SQL or pick a template to visualize your database structure.</div><button onclick="showPage(\'schema\')" style="margin-top:12px;padding:6px 16px">Go to Schema</button></div>';
   }
 }
 
@@ -227,6 +227,7 @@ function loadFile(e) {
     document.getElementById('sql-input').value = ev.target.result;
     clearFieldError('sql-input-group');
     document.getElementById('template-select').value = '';
+    hideEmptyState();
     toast('File loaded: ' + file.name, 'info');
   };
   reader.readAsText(file);
@@ -237,6 +238,7 @@ function loadTemplate(value) {
   document.getElementById('sql-input').value = TEMPLATES[value];
   document.getElementById('template-select').value = value;
   clearFieldError('sql-input-group');
+  hideEmptyState();
   toast('Template loaded', 'info');
 }
 
@@ -253,6 +255,16 @@ function showFieldError(groupId, message) {
   if (errorEl) errorEl.textContent = message;
 }
 
+function toggleEmptyState() {
+  var el = document.getElementById('schema-empty');
+  if (!el) return;
+  var sql = document.getElementById('sql-input').value.trim();
+  el.style.display = sql ? 'none' : 'flex';
+}
+function hideEmptyState() {
+  var el = document.getElementById('schema-empty');
+  if (el) el.style.display = 'none';
+}
 function toggleShortcuts() {
   var modal = document.getElementById('shortcuts-modal');
   modal.style.display = modal.style.display === 'none' ? 'flex' : 'none';
@@ -1099,3 +1111,5 @@ function closePanel() {
   var activePage = document.querySelector('.page.active');
   if (activePage && activePage.id === 'page-history') loadHistory();
 })();
+
+document.getElementById('sql-input').addEventListener('input', toggleEmptyState);
