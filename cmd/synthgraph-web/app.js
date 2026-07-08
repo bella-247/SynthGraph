@@ -153,7 +153,7 @@ var TEMPLATES = {
   ].join('\n')
 };
 
-function showPage(name) {
+function showPage(name, fromHash) {
   document.querySelectorAll('.page').forEach(function(p) { p.classList.remove('active'); });
   var page = document.getElementById('page-' + name);
   if (page) page.classList.add('active');
@@ -167,10 +167,13 @@ function showPage(name) {
     el.classList.add('active');
     el.setAttribute('aria-selected', 'true');
     el.setAttribute('tabindex', '0');
+    el.focus();
   }
-  // Update the page title for bookmarks and tab identification
   var titles = { schema: 'Schema', graph: 'Graph', generate: 'Generate', history: 'History' };
   document.title = (titles[name] || '') + ' — SynthGraph';
+  if (!fromHash && location.hash !== '#' + name) {
+    history.pushState(null, '', '#' + name);
+  }
   if (name === 'history') loadHistory();
   if (name === 'graph') {
     if (parsedModel) renderGraph();
@@ -1136,8 +1139,19 @@ function closePanel() {
 }
 
 (function() {
+  var hash = location.hash.replace('#', '');
+  if (hash && ['schema','graph','generate','history'].indexOf(hash) !== -1) {
+    showPage(hash, true);
+  }
   var activePage = document.querySelector('.page.active');
   if (activePage && activePage.id === 'page-history') loadHistory();
 })();
+
+window.addEventListener('hashchange', function() {
+  var hash = location.hash.replace('#', '');
+  if (hash && ['schema','graph','generate','history'].indexOf(hash) !== -1) {
+    showPage(hash, true);
+  }
+});
 
 document.getElementById('sql-input').addEventListener('input', toggleEmptyState);
