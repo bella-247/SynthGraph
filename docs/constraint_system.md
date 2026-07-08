@@ -1,5 +1,9 @@
 # SynthGraph — Constraint System
 
+> **Who this is for:** Developers and advanced users who want to understand exactly how SynthGraph handles each type of database constraint (primary keys, foreign keys, unique, enum, etc.).
+>
+> **Plain English summary:** SynthGraph never generates data that breaks your schema's rules. This document walks through every constraint type and explains how the generator satisfies it — and what happens when it can't.
+
 This document describes how SynthGraph handles each type of database constraint during generation and validation.
 
 ---

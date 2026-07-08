@@ -4,15 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SynthGraph</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%233b82f6'/%3E%3Ctext x='16' y='21' text-anchor='middle' fill='white' font-size='16' font-weight='700' font-family='system-ui'%3ESG%3C/text%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%233b82f6'/%3E%3Ccircle cx='10' cy='10' r='3.5' fill='%23fff'/%3E%3Ccircle cx='22' cy='10' r='3.5' fill='%23fff'/%3E%3Ccircle cx='16' cy='22' r='3.5' fill='%23fff'/%3E%3Cline x1='13' y1='12' x2='14.5' y2='19' stroke='%23fff' stroke-width='1.5' stroke-linecap='round'/%3E%3Cline x1='19' y1='12' x2='17.5' y2='19' stroke='%23fff' stroke-width='1.5' stroke-linecap='round'/%3E%3Cline x1='13.5' y1='10' x2='18.5' y2='10' stroke='%23fff' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/styles.css">
 <script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"></script>
 </head>
 <body>
+<a href="#main-content" class="skip-link">Skip to main content</a>
 
 <div class="header" role="banner">
   <div class="logo">
-    <span class="logo-icon">SG</span>
+    <span class="logo-icon"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="5" cy="5" r="2" fill="#fff"/><circle cx="11" cy="5" r="2" fill="#fff"/><circle cx="8" cy="12" r="2" fill="#fff"/><line x1="6.5" y1="6.5" x2="7.2" y2="10.5" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/><line x1="9.5" y1="6.5" x2="8.8" y2="10.5" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/><line x1="7" y1="5" x2="9" y2="5" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/></svg></span>
+    <h1 class="sr-only">SynthGraph</h1>
     SynthGraph
   </div>
   <nav role="navigation" aria-label="Main navigation">
@@ -20,6 +22,7 @@
     <a onclick="showPage('graph')" id="nav-graph" role="tab" aria-selected="false" tabindex="-1">Graph</a>
     <a onclick="showPage('generate')" id="nav-generate" role="tab" aria-selected="false" tabindex="-1">Generate</a>
     <a onclick="showPage('history')" id="nav-history" role="tab" aria-selected="false" tabindex="-1">History</a>
+    <a onclick="showPage('docs')" id="nav-docs" role="tab" aria-selected="false" tabindex="-1">Docs</a>
   </nav>
   <div class="header-actions">
     <button class="icon-btn" onclick="toggleShortcuts()" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><span class="kbd-shortcut">?</span></button>
@@ -27,7 +30,7 @@
   </div>
 </div>
 
-<div class="main" role="main">
+<div class="main" id="main-content" role="main">
 
 <!-- Schema Page -->
 <div class="page active" id="page-schema" role="tabpanel">
@@ -49,6 +52,18 @@
       <label for="sql-input">SQL DDL</label>
       <textarea id="sql-input" rows="10" style="width:100%" placeholder="CREATE TABLE users (&#10;  id BIGSERIAL PRIMARY KEY,&#10;  email VARCHAR(255) UNIQUE NOT NULL,&#10;  created_at TIMESTAMP DEFAULT NOW()&#10);" aria-describedby="sql-error" spellcheck="false"></textarea>
       <div class="field-error" id="sql-error"></div>
+    </div>
+    <div id="schema-empty" class="empty-state">
+      <div class="empty-state-icon">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/><path d="M4 11v9h16v-9"/></svg>
+      </div>
+      <h3 class="empty-state-title">Start with a template</h3>
+      <p class="empty-state-desc">Pick a template above or paste your own SQL. Try one of these:</p>
+      <div class="empty-state-actions">
+        <button onclick="loadTemplate('ecommerce')" class="small">E-Commerce</button>
+        <button onclick="loadTemplate('blog')" class="small">Blog</button>
+        <button onclick="loadTemplate('saas')" class="small">SaaS</button>
+      </div>
     </div>
     <div class="form-actions">
       <button class="primary" onclick="parseSchema()" id="parse-btn">Parse Schema</button>
@@ -126,12 +141,12 @@
     <div class="form-row">
       <div class="form-group">
         <label for="gen-rows">Rows per table</label>
-        <input type="number" id="gen-rows" value="10" min="1" max="100000" aria-describedby="gen-rows-error">
+        <input type="number" id="gen-rows" value="10" min="1" max="100000" inputmode="numeric" aria-describedby="gen-rows-error">
         <div class="field-error" id="gen-rows-error"></div>
       </div>
       <div class="form-group">
         <label for="gen-seed">Random seed</label>
-        <input type="number" id="gen-seed" value="42" min="0">
+        <input type="number" id="gen-seed" value="42" min="0" inputmode="numeric">
       </div>
       <div class="form-group">
         <label for="gen-format">Output format</label>
@@ -200,6 +215,21 @@
 
 </div>
 
+<!-- Docs Page -->
+<div class="page" id="page-docs" role="tabpanel">
+  <div class="docs-layout">
+    <nav class="docs-sidebar" aria-label="Documentation sections">
+      <div class="docs-sidebar-title">Guide</div>
+      <a onclick="showDocSection('getting-started')" class="docs-sidebar-link active" data-section="getting-started" role="tab" aria-selected="true">Getting Started</a>
+      <a onclick="showDocSection('web-app-guide')" class="docs-sidebar-link" data-section="web-app-guide" role="tab" aria-selected="false">Web App Guide</a>
+      <a onclick="showDocSection('cli-guide')" class="docs-sidebar-link" data-section="cli-guide" role="tab" aria-selected="false">CLI Guide</a>
+      <a onclick="showDocSection('faq')" class="docs-sidebar-link" data-section="faq" role="tab" aria-selected="false">FAQ</a>
+      <a onclick="showDocSection('about')" class="docs-sidebar-link" data-section="about" role="tab" aria-selected="false">About</a>
+    </nav>
+    <main class="docs-content" id="docs-content" role="main"></main>
+  </div>
+</div>
+
 <!-- Shortcuts Modal -->
 <div class="modal-overlay" id="shortcuts-modal" style="display:none" onclick="if(event.target===this)toggleShortcuts()" role="dialog" aria-label="Keyboard shortcuts">
   <div class="modal">
@@ -212,6 +242,7 @@
       <div class="shortcut-row"><span class="kbd">G</span><span>Graph page</span></div>
       <div class="shortcut-row"><span class="kbd">D</span><span>Generate page</span></div>
       <div class="shortcut-row"><span class="kbd">H</span><span>History page</span></div>
+      <div class="shortcut-row"><span class="kbd">I</span><span>Docs page</span></div>
       <div class="shortcut-row"><span class="kbd">?</span><span>Toggle shortcuts</span></div>
       <div class="shortcut-row"><span class="kbd">Esc</span><span>Close panel / modal</span></div>
       <div class="shortcut-row"><span class="kbd">&larr;</span><span class="kbd">&rarr;</span><span>Navigate tabs</span></div>

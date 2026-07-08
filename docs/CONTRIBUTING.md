@@ -1,5 +1,9 @@
 # Contributing to SynthGraph
 
+> **Who this is for:** Anyone who wants to contribute code, report bugs, or suggest features. Covers PR workflow, code style, testing rules, and architectural guidelines.
+>
+> **New to open source?** Don't worry — we welcome contributors of all levels. Check the `good first issue` labels on GitHub for beginner-friendly tasks.
+
 Thank you for your interest in contributing. SynthGraph is built to be a long-term, widely adopted developer tool — and that only happens through a strong, thoughtful community.
 
 This document explains how to contribute effectively.

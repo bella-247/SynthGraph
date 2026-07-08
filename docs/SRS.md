@@ -1,5 +1,9 @@
 # SynthGraph — Software Requirements Specification (SRS)
 
+> **Who this is for:** Developers and contributors who want to understand how SynthGraph is designed under the hood. This document covers the internal architecture, pipeline stages, data structures, and constraint system in technical detail.
+>
+> **If you just want to use SynthGraph:** Start with the [README](../README.md) (web app) or the [CLI Reference](cli_reference.md) (command line). This document is about *how it works*, not *how to use it*.
+
 **Version:** 1.0.0  
 **Status:** Pre-Implementation Draft  
 **Language:** Go  

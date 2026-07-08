@@ -1,5 +1,7 @@
 # SynthGraph — Future Plan
 
+> **Who this is for:** Anyone curious about what's coming next. Features are grouped by theme, not priority — nothing here is guaranteed or scheduled.
+
 Features and enhancements deferred beyond the current release. Items are grouped by theme, not priority or timeline.
 
 ---
