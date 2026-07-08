@@ -457,7 +457,7 @@ release:
     GOOS=windows GOARCH=amd64 go build -o dist/synthgraph-windows-amd64.exe ./cmd/synthgraph
 ```
 
-Note: cross-compilation requires `CGO_ENABLED=1` for the PostgreSQL parser (depends on `pg_query_go` via CGO). Ensure a C cross-compiler is available for each target platform, or see `docs/cli_reference.md` for alternative build setups.
+Note: cross-compilation requires `CGO_ENABLED=1` (or `$env:CGO_ENABLED='1'` on PowerShell) for the PostgreSQL parser (depends on `pg_query_go` via CGO). Ensure a C cross-compiler is available for each target platform, or see `docs/cli_reference.md` for alternative build setups.
 
 ---
 
