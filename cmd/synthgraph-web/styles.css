@@ -51,6 +51,7 @@ button:active{transform:translateY(0)}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 :focus:not(:focus-visible){outline:none}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .skip-link{
   position:absolute;top:-100%;left:8px;z-index:300;
   padding:8px 16px;background:var(--accent);color:#fff;
@@ -347,6 +348,9 @@ table tr:hover td{background:rgba(255,255,255,0.02)}
 .empty-state-desc{font-size:13px;color:var(--text2);margin:0;max-width:360px;line-height:1.5}
 .empty-state-actions{display:flex;gap:8px;margin-top:4px}
 
+@media (prefers-reduced-motion: reduce){
+  *,.page,.modal,.toast,.gen-done,.progress-fill::after,.loading-spinner{animation:none!important;transition:none!important}
+}
 @media (max-width:640px){
   .header{padding:0 12px;gap:10px;height:48px}
   .main{padding:16px 12px}
