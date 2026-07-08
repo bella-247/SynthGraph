@@ -24,8 +24,14 @@ No manual seed files. No foreign key violations. No frustration.
 A full visual tool that takes you from schema to download in 5 steps.
 
 ```bash
+# macOS / Linux (bash/zsh):
 CGO_ENABLED=1 go run ./cmd/synthgraph-web/
+
+# Windows (PowerShell):
+$env:CGO_ENABLED='1'; go run ./cmd/synthgraph-web/
 ```
+
+> **Why `CGO_ENABLED=1`?** SynthGraph embeds PostgreSQL's own C parser (`pg_query_go`) to read SQL reliably. CGO bridges Go and C — it's required.
 
 Open **http://localhost:8080** and follow the pipeline:
 
@@ -85,7 +91,11 @@ go version
 # 2. Clone and start the web app
 git clone https://github.com/bella-247/SynthGraph.git
 cd SynthGraph
+
+# macOS/Linux:
 CGO_ENABLED=1 go run ./cmd/synthgraph-web/
+# Windows PowerShell:
+# $env:CGO_ENABLED='1'; go run ./cmd/synthgraph-web/
 
 # 3. Open http://localhost:8080
 ```
@@ -102,8 +112,10 @@ Then:
 ## Quick start: CLI
 
 ```bash
-# Build the CLI
+# Build the CLI (macOS/Linux):
 CGO_ENABLED=1 go build -o synthgraph.exe ./cmd/synthgraph/
+# Windows PowerShell:
+# $env:CGO_ENABLED='1'; go build -o synthgraph.exe ./cmd/synthgraph/
 
 # Generate 50 rows per table
 ./synthgraph.exe generate --input testdata/schemas/ecommerce.sql --rows 50

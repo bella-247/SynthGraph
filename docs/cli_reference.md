@@ -14,13 +14,22 @@ Complete guide to using SynthGraph from the command line.
 ### Install the CLI
 
 ```bash
+# macOS/Linux (bash/zsh):
 CGO_ENABLED=1 go install ./cmd/synthgraph@latest
+
+# Windows (PowerShell):
+# $env:CGO_ENABLED='1'; go install ./cmd/synthgraph@latest
 ```
 
 Or build locally:
 ```bash
+# macOS/Linux:
 CGO_ENABLED=1 go build -o synthgraph.exe ./cmd/synthgraph/
+# Windows PowerShell:
+# $env:CGO_ENABLED='1'; go build -o synthgraph.exe ./cmd/synthgraph/
 ```
+
+> **Why CGO?** SynthGraph uses PostgreSQL's own C parser (`pg_query_go`) so schemas are read exactly as PostgreSQL would. CGO is the bridge between Go and C — it's required for parsing.
 
 ### Windows setup
 
@@ -152,6 +161,13 @@ synthgraph version
 ---
 
 ## FAQ
+
+### "CGO_ENABLED=1 is not recognized" (PowerShell)
+
+PowerShell doesn't support `VAR=value` prefix syntax. Use `$env:CGO_ENABLED='1'` instead:
+```powershell
+$env:CGO_ENABLED='1'; go run ./cmd/synthgraph-web/
+```
 
 ### "gcc: error: unrecognized command-line option"
 
