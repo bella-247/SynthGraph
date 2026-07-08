@@ -820,6 +820,25 @@ function showGenerationResult(data) {
   var resultEl = document.getElementById('gen-result');
   resultEl.style.display = 'block';
 
+  var doneEl = document.getElementById('gen-done');
+  if (!doneEl) {
+    doneEl = document.createElement('div');
+    doneEl.id = 'gen-done';
+    doneEl.className = 'gen-done';
+    var container = resultEl.querySelector('.card-header');
+    if (container) container.parentNode.insertBefore(doneEl, container);
+  }
+  doneEl.style.display = 'flex';
+  var hasWarnings = data.errors && data.errors.length;
+  doneEl.className = 'gen-done' + (hasWarnings ? ' gen-done-warn' : '');
+  doneEl.innerHTML = '<div class="gen-done-icon">' + (hasWarnings ? '&#9888;' : '&#10003;') + '</div>' +
+    '<div class="gen-done-text"><div class="gen-done-title">' + (hasWarnings ? 'Generated with warnings' : 'Generation complete') + '</div>' +
+    '<div class="gen-done-desc">' + data.tables + ' table(s) \u00B7 ' + (data.format || '').toUpperCase() + (hasWarnings ? ' \u00B7 ' + data.errors.length + ' warning(s)' : '') + '</div></div>' +
+    '<div class="gen-done-actions">' +
+    '<button onclick="downloadResult()" class="primary small">Download</button>' +
+    '<button onclick="showPage(\'history\')" class="small">View in History</button>' +
+    '<button onclick="resetGeneration()" class="small ghost">Generate More</button></div>';
+
   var metaEl = document.getElementById('result-meta');
   metaEl.innerHTML = '<span class="badge badge-blue">Job #' + data.job_id + '</span><span>' + data.tables + ' tables</span><span>' + (data.format || '').toUpperCase() + '</span>';
   if (data.errors && data.errors.length) {
@@ -1103,6 +1122,15 @@ function deleteJob(jobId) {
   });
 }
 
+function resetGeneration() {
+  document.getElementById('gen-result').style.display = 'none';
+  document.getElementById('gen-progress').style.display = 'none';
+  document.getElementById('gen-pipeline').style.display = 'none';
+  var doneEl = document.getElementById('gen-done');
+  if (doneEl) doneEl.style.display = 'none';
+  document.getElementById('generate-btn').disabled = false;
+  document.getElementById('generate-btn').textContent = 'Generate';
+}
 function closePanel() {
   document.getElementById('detail-panel').classList.remove('open');
 }
