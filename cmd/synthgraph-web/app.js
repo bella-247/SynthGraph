@@ -1175,7 +1175,11 @@ var DOCS = {
 
       '<section class="docs-section"><h3>Step 1: Start the web app</h3>' +
       '<p>Open a terminal in the SynthGraph directory and run:</p>' +
+<<<<<<< HEAD
       '<pre><code># macOS/Linux:\nCGO_ENABLED=1 go run ./cmd/synthgraph-web/\n# Windows PowerShell:\n# $env:CGO_ENABLED=\\'1\\'; go run ./cmd/synthgraph-web/</code></pre>' +
+=======
+      '<pre><code># macOS/Linux:\nCGO_ENABLED=1 go run ./cmd/synthgraph-web/\n# Windows PowerShell:\n# $env:CGO_ENABLED=\'1\'; go run ./cmd/synthgraph-web/</code></pre>' +
+>>>>>>> 5b3d2f6a22df6f2f217eb4386553af4b453c6ebb
       '<p>Open your browser to <a href="http://localhost:8080" target="_blank">http://localhost:8080</a>.</p></section>' +
 
       '<section class="docs-section"><h3>Step 2: Load a schema</h3>' +
@@ -1247,7 +1251,11 @@ var DOCS = {
     content: '<p class="docs-lead">Using SynthGraph from the command line for scripts, CI pipelines, and automation.</p>' +
 
       '<section class="docs-section"><h3>Installation</h3>' +
+<<<<<<< HEAD
       '<pre><code># macOS/Linux:\nCGO_ENABLED=1 go build -o synthgraph.exe ./cmd/synthgraph/\n# Windows PowerShell:\n# $env:CGO_ENABLED=\\'1\\'; go build -o synthgraph.exe ./cmd/synthgraph/</code></pre>' +
+=======
+      '<pre><code># macOS/Linux:\nCGO_ENABLED=1 go build -o synthgraph.exe ./cmd/synthgraph/\n# Windows PowerShell:\n# $env:CGO_ENABLED=\'1\'; go build -o synthgraph.exe ./cmd/synthgraph/</code></pre>' +
+>>>>>>> 5b3d2f6a22df6f2f217eb4386553af4b453c6ebb
       '<p>This creates a single binary called <code>synthgraph.exe</code> in the current directory.</p></section>' +
 
       '<section class="docs-section"><h3>Basic usage</h3>' +
