@@ -17,43 +17,71 @@ No manual seed files. No foreign key violations. No frustration.
 
 ---
 
-## Two ways to use it
+## Quick start
 
-### 1. Web app (easiest — recommended for beginners)
+### Prerequisites
 
-A full visual tool that takes you from schema to download in 5 steps.
+| Tool | Version | Purpose |
+|------|---------|---------|
+| **Go** | 1.21+ | Language runtime and compiler |
+| **GCC / MinGW-w64** | any | Required by CGO for `pg_query_go` (PostgreSQL parser) |
+| **Make** | 4+ | Build/dev automation (Linux/macOS, or Git Bash on Windows) |
 
-```bash
-# macOS / Linux (bash/zsh):
-CGO_ENABLED=1 go run ./cmd/synthgraph-web/
+> **Why `CGO_ENABLED=1`?** SynthGraph embeds PostgreSQL's own C parser (`pg_query_go`) to read SQL reliably. CGO bridges Go and C — it's required. The `Makefile` and `dev.ps1` set it for you, so you never type it.
 
-# Windows (PowerShell):
-$env:CGO_ENABLED='1'; go run ./cmd/synthgraph-web/
-```
+> **Windows users:** Use `.\dev.ps1` instead of `make` — same commands, documented below.
 
-> **Why `CGO_ENABLED=1`?** SynthGraph embeds PostgreSQL's own C parser (`pg_query_go`) to read SQL reliably. CGO bridges Go and C — it's required.
-
-Open **http://localhost:8080** and follow the pipeline:
-
-| Step | What happens |
-|------|-------------|
-| **Schema** | Paste your SQL or pick a template to start |
-| **Graph** | See your schema as an interactive node diagram |
-| **Generate** | Set row count and format, click Generate |
-| **Download** | Get your seed file as SQL or CSV |
-| **History** | Browse and re-download past jobs |
-
-> **Tip:** Don't have a schema handy? Pick the "E-Commerce" template to see how it works.
-
-### 2. CLI (for scripts, CI, and power users)
-
-Same engine, but from the terminal. Perfect for automation.
+### Run the web app (easiest)
 
 ```bash
-synthgraph generate --input schema.sql --rows 100 --output seed.sql
+# Linux / macOS
+make run-web
+# → http://localhost:8080
+
+# Windows (PowerShell)
+.\dev.ps1 run web
 ```
 
-See the [CLI Reference](docs/cli_reference.md) for all commands and flags.
+Then in your browser:
+1. **Schema** — paste your SQL or pick the E-Commerce template
+2. **Graph** — see tables and relationships as an interactive diagram
+3. **Generate** — set row count, click Generate
+4. **Download** — get your seed file as SQL or CSV
+5. **History** — re-download past jobs
+
+### Run the CLI
+
+```bash
+# Linux / macOS
+make run-cli                                    # default schema, 10 rows
+make run-cli SCHEMA=my.sql ROWS=100             # custom schema + row count
+
+# Windows (PowerShell)
+.\dev.ps1 run cli
+.\dev.ps1 run cli my.sql
+```
+
+---
+
+## Commands
+
+All common operations go through `make` (Linux/macOS) or `dev.ps1` (Windows). No more remembering flags, paths, or `CGO_ENABLED`.
+
+| Task | Linux/macOS | Windows |
+|------|-------------|---------|
+| Build CLI | `make build-cli` | `.\dev.ps1 build` |
+| Build web | `make build-web` | `.\dev.ps1 build` |
+| Build all | `make build` / `make build-all` | `.\dev.ps1 build` |
+| Run web (port 8080) | `make run-web` | `.\dev.ps1 run web` |
+| Run web (custom port) | `make run-web PORT=9090` | `.\dev.ps1 run web 9090` |
+| Run CLI (default) | `make run-cli` | `.\dev.ps1 run cli` |
+| Run CLI (custom) | `make run-cli SCHEMA=my.sql ROWS=100` | `.\dev.ps1 run cli my.sql` |
+| Test all | `make test` | `.\dev.ps1 test all` |
+| Test (fast, no CGO) | `make test-quick` | `.\dev.ps1 test quick` |
+| Lint | `make lint` | `.\dev.ps1 lint` |
+| Clean | `make clean` | `.\dev.ps1 clean` |
+
+Binaries are written to `bin/` (e.g. `bin/synthgraph`, `bin/synthgraph-web`).
 
 ---
 
@@ -82,56 +110,9 @@ The result: data that **just works**, every time.
 
 ---
 
-## Quick start: Web app
-
-```bash
-# 1. Make sure Go is installed (1.21+)
-go version
-
-# 2. Clone and start the web app
-git clone https://github.com/bella-247/SynthGraph.git
-cd SynthGraph
-
-# macOS/Linux:
-CGO_ENABLED=1 go run ./cmd/synthgraph-web/
-# Windows PowerShell:
-# $env:CGO_ENABLED='1'; go run ./cmd/synthgraph-web/
-
-# 3. Open http://localhost:8080
-```
-
-Then:
-1. On the **Schema** page, pick a template or paste your SQL
-2. Click "Parse Schema" — the app analyzes your tables
-3. Go to **Graph** to see relationships visually
-4. Go to **Generate**, set rows (try 10), click Generate
-5. Download your seed file
-
----
-
-## Quick start: CLI
-
-```bash
-# Build the CLI (macOS/Linux):
-CGO_ENABLED=1 go build -o synthgraph.exe ./cmd/synthgraph/
-# Windows PowerShell:
-# $env:CGO_ENABLED='1'; go build -o synthgraph.exe ./cmd/synthgraph/
-
-# Generate 50 rows per table
-./synthgraph.exe generate --input testdata/schemas/ecommerce.sql --rows 50
-
-# Output to a file
-./synthgraph.exe generate --input testdata/schemas/ecommerce.sql --rows 50 --output seed.sql
-
-# See what your schema looks like
-./synthgraph.exe inspect --input testdata/schemas/ecommerce.sql --graph --semantic
-```
-
----
-
 ## Example walkthrough
 
-**Input** (`ecommerce.sql`):
+**Input** (`testdata/schemas/ecommerce.sql`):
 ```sql
 CREATE TABLE users (
     id         SERIAL PRIMARY KEY,
@@ -183,11 +164,7 @@ Each stage is a pure function that produces one artifact and feeds it to the nex
 ## Development
 
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for building, testing, and extending.
-
-## Contributing
-
-Contributions welcome — see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md). Good first issues: new semantic field generators, test coverage, better error messages.
-
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
