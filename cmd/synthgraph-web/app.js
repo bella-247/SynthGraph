@@ -168,6 +168,9 @@ function showPage(name) {
     el.setAttribute('aria-selected', 'true');
     el.setAttribute('tabindex', '0');
   }
+  // Update the page title for bookmarks and tab identification
+  var titles = { schema: 'Schema', graph: 'Graph', generate: 'Generate', history: 'History' };
+  document.title = (titles[name] || '') + ' — SynthGraph';
   if (name === 'history') loadHistory();
   if (name === 'graph') {
     if (parsedModel) renderGraph();
@@ -232,6 +235,7 @@ function loadFile(e) {
 function loadTemplate(value) {
   if (!value || !TEMPLATES[value]) return;
   document.getElementById('sql-input').value = TEMPLATES[value];
+  document.getElementById('template-select').value = value;
   clearFieldError('sql-input-group');
   toast('Template loaded', 'info');
 }
@@ -525,15 +529,14 @@ async function renderGraph() {
           label: n.table,
           roles: roles.join(', '),
           columns: n.columns,
-          isJunction: n.is_junction
-        },
-        style: {'background-color': nodeColor(roles), width: 60, height: 60}
+          isJunction: n.is_junction,
+          color: nodeColor(roles)
+        }
       });
     });
     gData.edges.forEach(function(e) {
       elements.push({
-        data: {id: e.id, source: e.source, target: e.target, label: e.label},
-        style: {'line-style': e.nullable ? 'dashed' : 'solid'}
+        data: {id: e.id, source: e.source, target: e.target, label: e.label, nullable: e.nullable}
       });
     });
     window.cyInstance = cytoscape({
@@ -544,6 +547,7 @@ async function renderGraph() {
           'label': 'data(label)', 'font-size': '11px',
           'text-valign': 'bottom', 'text-halign': 'center',
           'color': '#e2e8f0', 'text-wrap': 'wrap', 'text-max-width': '80px',
+          'background-color': 'data(color)', 'width': 60, 'height': 60,
           'border-width': 2, 'border-color': '#263040',
           'transition-property': 'background-color, border-color, opacity',
           'transition-duration': '0.2s'
@@ -555,7 +559,8 @@ async function renderGraph() {
           'width': 2, 'line-color': '#3b82f6',
           'target-arrow-color': '#3b82f6', 'target-arrow-shape': 'triangle',
           'curve-style': 'bezier', 'label': 'data(label)', 'font-size': '9px',
-          'color': '#94a3b8', 'text-rotation': 'autorotate'
+          'color': '#94a3b8', 'text-rotation': 'autorotate',
+          'line-style': 'solid'
         }},
         { selector: 'edge[?nullable]', style: {
           'line-style': 'dashed'
@@ -816,33 +821,55 @@ function showGenerationResult(data) {
     warningsHtml += '</div>';
   }
 
+  var isSQL = (data.format === 'sql');
   var previewHtml = warningsHtml;
   var lines = data.data.split('\n').filter(function(l) { return l.trim(); });
-  var previewLines = lines.slice(0, 21);
-  var csvLines = previewLines.map(function(l) { return parseCSVLine(l); });
-  if (csvLines.length > 0) {
-    previewHtml += '<div class="data-preview"><table><thead><tr>';
-    (csvLines[0] || []).forEach(function(h) { previewHtml += '<th>' + escapeHTML(h) + '</th>'; });
-    previewHtml += '</tr></thead><tbody>';
-    for (var i = 1; i < csvLines.length; i++) {
-      previewHtml += '<tr>';
-      (csvLines[i] || []).forEach(function(c) { previewHtml += '<td onclick="copyCell(this)" title="Click to copy">' + escapeHTML(c) + '</td>'; });
-      previewHtml += '</tr>';
+
+  if (isSQL) {
+    // SQL output: show the first N INSERT statements as code blocks
+    var sqlPreviewLines = lines.slice(0, 10);
+    previewHtml += '<div class="data-preview"><pre style="padding:12px;margin:0;font-size:11px;line-height:1.6;color:var(--text);white-space:pre-wrap;word-break:break-word">';
+    sqlPreviewLines.forEach(function(l) { previewHtml += escapeHTML(l) + '\n'; });
+    if (lines.length > 10) previewHtml += '<span style="color:var(--text3)">... and ' + (lines.length - 10) + ' more lines</span>\n';
+    previewHtml += '</pre></div>';
+  } else {
+    // CSV output: parse and show as a preview table
+    var previewLines = lines.slice(0, 21);
+    var csvLines = previewLines.map(function(l) { return parseCSVLine(l); });
+    if (csvLines.length > 0) {
+      previewHtml += '<div class="data-preview"><table><thead><tr>';
+      (csvLines[0] || []).forEach(function(h) { previewHtml += '<th>' + escapeHTML(h) + '</th>'; });
+      previewHtml += '</tr></thead><tbody>';
+      for (var i = 1; i < csvLines.length; i++) {
+        previewHtml += '<tr>';
+        (csvLines[i] || []).forEach(function(c) { previewHtml += '<td onclick="copyCell(this)" title="Click to copy">' + escapeHTML(c) + '</td>'; });
+        previewHtml += '</tr>';
+      }
+      previewHtml += '</tbody></table></div>';
     }
-    previewHtml += '</tbody></table></div>';
   }
   document.getElementById('result-preview').innerHTML = previewHtml;
 
   document.getElementById('result-raw-text').value = data.data;
 
-  resultTab = 'preview';
-  document.querySelectorAll('#gen-result .tab').forEach(function(t) { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
-  document.querySelector('#gen-result .tab').classList.add('active');
-  document.querySelector('#gen-result .tab').setAttribute('aria-selected', 'true');
-  document.getElementById('result-preview').style.display = 'block';
-  document.getElementById('result-raw').style.display = 'none';
-
-  showProfiling(data.data, (csvLines[0] || []));
+  if (isSQL) {
+    // SQL format: default to Raw Data tab since CSV-style preview doesn't apply
+    resultTab = 'raw';
+    document.querySelectorAll('#gen-result .tab').forEach(function(t) { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+    document.querySelectorAll('#gen-result .tab')[1].classList.add('active');
+    document.querySelectorAll('#gen-result .tab')[1].setAttribute('aria-selected', 'true');
+    document.getElementById('result-preview').style.display = 'none';
+    document.getElementById('result-raw').style.display = 'block';
+    document.getElementById('result-profiling').style.display = 'none';
+  } else {
+    resultTab = 'preview';
+    document.querySelectorAll('#gen-result .tab').forEach(function(t) { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+    document.querySelector('#gen-result .tab').classList.add('active');
+    document.querySelector('#gen-result .tab').setAttribute('aria-selected', 'true');
+    document.getElementById('result-preview').style.display = 'block';
+    document.getElementById('result-raw').style.display = 'none';
+    showProfiling(data.data, (lines.slice(0, 1).length ? lines.slice(0, 1).map(function(l) { return parseCSVLine(l); })[0] : []));
+  }
 }
 
 function showProfiling(rawData, headers) {

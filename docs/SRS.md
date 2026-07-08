@@ -721,7 +721,7 @@ If the validator fails due to an internal bug (not a schema error), the error mu
 
 ## 12. Output Formats
 
-### 13.1 Exporter Interface
+### 12.1 Exporter Interface
 
 ```go
 type Exporter interface {
@@ -731,7 +731,7 @@ type Exporter interface {
 }
 ```
 
-### 13.2 SQL INSERT Exporter (V1 — Primary)
+### 12.2 SQL INSERT Exporter (V1 — Primary)
 
 Output is a single `.sql` file containing:
 
@@ -770,7 +770,7 @@ VALUES
 COMMIT;
 ```
 
-### 13.3 CSV Exporter (V1 — Secondary)
+### 12.3 CSV Exporter (V1 — Secondary)
 
 One `.csv` file per table. File naming: `{table_name}.csv`. Header row with column names. All values properly escaped per RFC 4180.
 
@@ -908,7 +908,7 @@ synthgraph version
 → SynthGraph v1.0.0
 ```
 
-### 16.2 Exit Codes
+### 14.2 Exit Codes
 
 | Code | Meaning |
 |---|---|
@@ -931,7 +931,7 @@ synthgraph version
 - Must generate 1,000 rows per table for schemas with up to 20 tables in under 10 seconds
 - Memory usage must not exceed 512MB for any supported workload in v1
 
-### 16.2 Determinism
+### 15.2 Determinism
 
 - Identical inputs (schema + row count + seed) must always produce identical outputs
 - The `--seed` flag controls all randomness in the system
@@ -986,59 +986,4 @@ synthgraph version
 - CI/CD pipeline (Go 1.26, CGO, Docker, cross-compile, GitHub Release)
 - Benchmark suite (generator, graph, parser)
 
-### 16.2 V2 Scope
-
-- **Web Application** (REST API + SPA frontend) — see §17
-- Prisma schema parser
-- Additional data distributions (normal, exponential, etc.)
-- Business rule engine (conditional logic between fields)
-- CHECK constraint enforcement
-- Direct database insertion mode
-- JSON / PostgreSQL COPY exporters
-- Schema diff command
-- Data anonymization
-- AI/LLM-powered generation
-
-## 17. Web Application
-
-### 17.1 Overview
-
-SynthGraph Web is a browser-based interface to the SynthGraph pipeline. It exposes the same functionality as the CLI through a REST API and an SPA frontend, adding interactive graph visualization, job history, and dataset preview.
-
-### 17.2 API Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/parse` | Upload or paste a SQL schema → returns parsed `schema.Model` JSON |
-| `POST` | `/api/graph` | Build graph from model → returns nodes, edges, cardinalities |
-| `POST` | `/api/semantic` | Infer semantic roles → returns semantic graph JSON |
-| `POST` | `/api/generate` | Generate synthetic data → returns or streams CSV/SQL |
-| `GET`  | `/api/jobs` | List generation job history |
-| `GET`  | `/api/jobs/:id` | Get job details and download links |
-
-### 17.3 Frontend Pages
-
-1. **Schema Upload** — drag-and-drop `.sql` file or paste DDL text; file validation and syntax feedback
-2. **Graph Visualizer** — interactive DAG with Cytoscape.js showing tables, FK edges, semantic roles (color-coded); click node for column/constraint detail panel
-3. **Generation Config** — form with all generate flags; rows, seed, format, schema-name; save/load named profiles
-4. **Generation Progress** — SSE stream showing per-table status; cancel button (triggers graceful shutdown via context cancellation)
-5. **Data Preview** — inline table preview of generated rows; pagination
-6. **Export** — download single CSV, SQL file, or zip archive
-7. **Job History** — table of past runs with timestamp, schema name, config, row counts, status (success/partial/failed)
-
-### 17.4 Architecture
-
-- Backend: Go HTTP server in `cmd/synthgraph-web/` importing existing `internal/` packages
-- Frontend: Single-page application (React) served by the Go backend
-- Build: Frontend compiled to static files, embedded via `//go:embed`
-- Container: Extended Dockerfile with multi-stage build (Node for frontend, Go for backend)
-- Stateless: No database; job history kept in-memory (configurable retention)
-
-### 17.5 Non-Functional
-
-- SSE for real-time generation progress
-- CLI flags take precedence over UI config
-- Versioned API (`/api/v1/...`)
-- CORS disabled (same-origin only)
-- 4096 max schema file size (pre-validated client-side)
-- Generation timeout configurable via env `SYNTHGRAPH_TIMEOUT` (default 5 minutes)
+Future plans have moved to [`docs/Future-Plan.md`](Future-Plan.md).

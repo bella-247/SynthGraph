@@ -1,6 +1,10 @@
 # If you prefer the allow list template instead of the deny list, see community template:
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
+*skills*
+.*/
+!.github
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
@@ -40,6 +44,8 @@ CLAUDE.md
 .claude/
 
 # Generated runtime files
-synthgraph-jobs.json
-synthgraph-web.exe
-synthgraph.exe
+*synthgraph-jobs.json*
+*synthgraph-web.exe*
+*synthgraph.exe*
+
+bin/
