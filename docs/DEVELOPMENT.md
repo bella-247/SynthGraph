@@ -227,6 +227,8 @@ rtk CGO_ENABLED=1 go build -o synthgraph-web.exe ./cmd/synthgraph-web/
 rtk CGO_ENABLED=1 go build -o serveviz.exe ./cmd/serveviz/
 ```
 
+> **PowerShell note:** Use `$env:CGO_ENABLED='1'` instead of the `CGO_ENABLED=1` prefix shown in examples.
+>
 > **On Windows with MinGW-w64**, if CGO complains about missing `gcc`, verify it's on your PATH:
 > ```bash
 > where gcc
