@@ -7,7 +7,7 @@
   --border-light: #38485a;
   --text: #e2e8f0;
   --text2: #94a3b8;
-  --text3: #64748b;
+  --text3: #7f8ea3;
   --accent: #3b82f6;
   --accent-hover: #60a5fa;
   --accent-glow: rgba(59,130,246,0.25);
@@ -49,6 +49,15 @@ button{
 button:hover{background:var(--bg4);border-color:var(--border-light);transform:translateY(-1px)}
 button:active{transform:translateY(0)}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+:focus:not(:focus-visible){outline:none}
+.skip-link{
+  position:absolute;top:-100%;left:8px;z-index:300;
+  padding:8px 16px;background:var(--accent);color:#fff;
+  font-size:13px;font-weight:600;border-radius:0 0 var(--radius-sm) var(--radius-sm);
+  text-decoration:none;transition:top 0.15s;
+}
+.skip-link:focus{top:0;outline:none}
 button:disabled{opacity:0.4;cursor:not-allowed;background:var(--bg3);border-color:var(--border);transform:none}
 button.primary{
   background:var(--accent);
@@ -69,6 +78,7 @@ button.small{padding:4px 10px;font-size:12px}
   font-size:14px;transition:all 0.15s;
 }
 .icon-btn:hover{background:var(--bg3);border-color:var(--border);color:var(--text)}
+.icon-btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-color:var(--border)}
 select,textarea,input[type="text"],input[type="number"],input[type="url"]{
   font-family:inherit;font-size:13px;
   padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);
@@ -332,4 +342,5 @@ table tr:hover td{background:rgba(255,255,255,0.02)}
   .graph-toolbar{flex-direction:column;align-items:stretch}
   .graph-search{max-width:none}
   .modal{min-width:auto}
+  .icon-btn{width:44px;height:44px}
 }
