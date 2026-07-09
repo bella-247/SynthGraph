@@ -167,9 +167,9 @@ synthgraph/
 │   ├── cli_reference.md       # User-facing CLI reference
 │   ├── graph_model.md         # Graph data model
 │   ├── constraint_system.md   # Constraint system design
-│   ├── CONTRIBUTING.md        # How to contribute
-│   ├── ROADMAP.md             # Future plans
-│   └── SRS.md                 # Software requirements spec
+│   ├── DESIGN.md              # Web UI design tokens
+│   ├── Future-Plan.md         # Upcoming features
+│   └── CONTRIBUTING.md        # How to contribute
 │
 ├── go.mod
 ├── go.sum
