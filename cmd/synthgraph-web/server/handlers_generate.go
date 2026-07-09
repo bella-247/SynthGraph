@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -18,7 +19,12 @@ import (
 	"synthgraph/internal/semantic"
 )
 
-func runGenerationPipeline(rawSQL string, rowCount int, seed int64) (*generator.Dataset, *schema.Model, error) {
+const maxSchemaBodySize = 10 << 20 // 10 MB
+
+func runGenerationPipeline(ctx context.Context, rawSQL string, rowCount int, seed int64) (*generator.Dataset, *schema.Model, error) {
+	if len(rawSQL) > maxSchemaBodySize {
+		return nil, nil, fmt.Errorf("schema too large (%d bytes, max %d)", len(rawSQL), maxSchemaBodySize)
+	}
 	parsedModel, parseError := postgresql.New().Parse([]byte(rawSQL))
 	if parseError != nil {
 		return nil, nil, fmt.Errorf("parse error: %w", parseError)
@@ -42,6 +48,7 @@ func runGenerationPipeline(rawSQL string, rowCount int, seed int64) (*generator.
 	}
 
 	generationContext := &generator.GenerationContext{
+		Context:       ctx,
 		GlobalSeed:    uint64(seed),
 		Model:         parsedModel,
 		Graph:         graphInstance,
@@ -117,7 +124,7 @@ func (server *Server) handleGenerate(responseWriter http.ResponseWriter, request
 		requestBody.Format = "csv"
 	}
 
-	dataset, parsedModel, pipelineError := runGenerationPipeline(requestBody.Input, requestBody.Rows, requestBody.Seed)
+	dataset, parsedModel, pipelineError := runGenerationPipeline(request.Context(), requestBody.Input, requestBody.Rows, requestBody.Seed)
 	if pipelineError != nil {
 		writeError(responseWriter, http.StatusInternalServerError, "%v", pipelineError)
 		return

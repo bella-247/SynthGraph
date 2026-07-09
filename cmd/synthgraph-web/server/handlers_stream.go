@@ -104,6 +104,10 @@ func (server *Server) handleGenerateStream(responseWriter http.ResponseWriter, r
 		stream.sendError("input (SQL) is required")
 		return
 	}
+	if len(rawSQL) > maxSchemaBodySize {
+		stream.sendError(fmt.Sprintf("schema too large (%d bytes, max %d)", len(rawSQL), maxSchemaBodySize))
+		return
+	}
 	if rowCount <= 0 {
 		rowCount = 10
 	}
@@ -232,6 +236,13 @@ func (server *Server) handleGenerateStream(responseWriter http.ResponseWriter, r
 	var exportedData []byte
 	pipeReader, pipeWriter := io.Pipe()
 	go func() {
+		defer pipeWriter.Close()
+		// If the request is cancelled, stop exporting and close the pipe.
+		select {
+		case <-requestContext.Done():
+			return
+		default:
+		}
 		exportConfig := &exporter.ExportConfig{
 			SchemaName:   schemaName,
 			IncludeHeader: true,
