@@ -201,6 +201,19 @@ func TestPanicRecovery(t *testing.T) {
 	}
 }
 
+func TestGenerateEndpointReturns400ForParseError(t *testing.T) {
+	testServer := newTestServer()
+	body := `{"input": "CREATE INVALID", "rows": 10}`
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/generate", bytes.NewReader([]byte(body)))
+	request.Header.Set("Content-Type", "application/json")
+	testServer.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d for parse error, got %d: %s", http.StatusBadRequest, recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestRequestBodySizeLimit(t *testing.T) {
 	testServer := newTestServer()
 	hugePayload := strings.Repeat("x", 12<<20)

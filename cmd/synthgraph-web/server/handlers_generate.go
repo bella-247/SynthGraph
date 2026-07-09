@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,6 +14,7 @@ import (
 	"synthgraph/internal/exporter"
 	"synthgraph/internal/generator"
 	"synthgraph/internal/graph"
+	"synthgraph/internal/parser"
 	"synthgraph/internal/parser/postgresql"
 	"synthgraph/internal/planner"
 	"synthgraph/internal/schema"
@@ -126,7 +128,11 @@ func (server *Server) handleGenerate(responseWriter http.ResponseWriter, request
 
 	dataset, parsedModel, pipelineError := runGenerationPipeline(request.Context(), requestBody.Input, requestBody.Rows, requestBody.Seed)
 	if pipelineError != nil {
-		writeError(responseWriter, http.StatusInternalServerError, "%v", pipelineError)
+		if pe := (*parser.ParseError)(nil); errors.As(pipelineError, &pe) {
+			writeError(responseWriter, http.StatusBadRequest, "%s", pe.Error())
+		} else {
+			writeError(responseWriter, http.StatusInternalServerError, "%v", pipelineError)
+		}
 		return
 	}
 

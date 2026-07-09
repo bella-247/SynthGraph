@@ -13,6 +13,7 @@ import (
 	"synthgraph/internal/exporter"
 	"synthgraph/internal/generator"
 	"synthgraph/internal/graph"
+	"synthgraph/internal/parser"
 	"synthgraph/internal/planner"
 	"synthgraph/internal/schema"
 	"synthgraph/internal/semantic"
@@ -53,7 +54,11 @@ func runGenerate(args []string) {
 
 	model, parseErr := parseSQLFile(config.input)
 	if parseErr != nil {
-		globalLogger.Error("parsing schema: %v", parseErr)
+		if pe := (*parser.ParseError)(nil); errors.As(parseErr, &pe) {
+			globalLogger.Error("parsing schema: %s", pe.Error())
+		} else {
+			globalLogger.Error("parsing schema: %v", parseErr)
+		}
 		os.Exit(1)
 	}
 

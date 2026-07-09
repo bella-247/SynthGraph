@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"synthgraph/internal/exporter"
 	"synthgraph/internal/generator"
 	"synthgraph/internal/graph"
+	"synthgraph/internal/parser"
 	"synthgraph/internal/parser/postgresql"
 	"synthgraph/internal/planner"
 	"synthgraph/internal/semantic"
@@ -148,7 +150,11 @@ func (server *Server) handleGenerateStream(responseWriter http.ResponseWriter, r
 
 	parsedModel, parseError := postgresql.New().Parse([]byte(rawSQL))
 	if parseError != nil {
-		stream.sendError(fmt.Sprintf("parse error: %v", parseError))
+		if pe := (*parser.ParseError)(nil); errors.As(parseError, &pe) {
+			stream.sendError(pe.Error())
+		} else {
+			stream.sendError(fmt.Sprintf("parse error: %v", parseError))
+		}
 		return
 	}
 	stream.sendEvent("stage", map[string]string{"stage": "parsing", "status": "done"})
