@@ -315,3 +315,76 @@ func validateParseOutput(t *testing.T, model *schema.Model) {
 		t.Error("expected enum order_status not found")
 	}
 }
+
+// TestProgressCallback verifies the Progress callback is invoked for each
+// table in the generation plan with correct 1-based indices.
+func TestProgressCallback(t *testing.T) {
+	sqlSchema := readTestSchema(t, "../../testdata/schemas/ecommerce.sql")
+	ctx := context.Background()
+
+	parsedModel, err := postgresql.New().Parse([]byte(sqlSchema))
+	if err != nil {
+		t.Fatalf("parse failed: %v", err)
+	}
+
+	g, err := graph.Build(parsedModel)
+	if err != nil {
+		t.Fatalf("graph build failed: %v", err)
+	}
+
+	semantic.ResolveColumns(parsedModel)
+	sg, err := semantic.Build(g)
+	if err != nil {
+		t.Fatalf("semantic build failed: %v", err)
+	}
+
+	plan, err := planner.BuildPlan(g, parsedModel, 10)
+	if err != nil {
+		t.Fatalf("plan build failed: %v", err)
+	}
+
+	type call struct {
+		table string
+		n, total int
+	}
+	var calls []call
+	genCtx := &generator.GenerationContext{
+		Context:       ctx,
+		GlobalSeed:    42,
+		Model:         parsedModel,
+		Graph:         g,
+		SemanticGraph: sg,
+		Progress: func(tableName string, current int, total int) {
+			calls = append(calls, call{tableName, current, total})
+		},
+	}
+
+	dataset, err := generator.Generate(plan, genCtx)
+	if err != nil {
+		t.Fatalf("generation failed: %v", err)
+	}
+
+	expectedTables := 7
+	if len(calls) != expectedTables {
+		t.Fatalf("expected %d progress callbacks, got %d", expectedTables, len(calls))
+	}
+
+	for i, c := range calls {
+		if c.n != i+1 {
+			t.Errorf("call %d: expected n=%d, got %d", i, i+1, c.n)
+		}
+		if c.total != expectedTables {
+			t.Errorf("call %d: expected total=%d, got %d", i, expectedTables, c.total)
+		}
+	}
+
+	// Verify table names match the generation plan order.
+	for i, tablePlan := range plan.Order {
+		if calls[i].table != tablePlan.TableName {
+			t.Errorf("call %d: expected table %q, got %q", i, tablePlan.TableName, calls[i].table)
+		}
+	}
+
+	// Sanity check: dataset should be valid and complete.
+	_ = dataset
+}

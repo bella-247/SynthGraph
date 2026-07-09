@@ -70,7 +70,11 @@ func runGenerate(args []string) {
 		os.Exit(1)
 	}
 
-	dataset, genErr := generateData(ctx, model, config)
+	progress := func(tableName string, current int, total int) {
+		globalLogger.Info("generating %s... (%d/%d)", tableName, current, total)
+	}
+
+	dataset, genErr := generateData(ctx, model, config, progress)
 	if genErr != nil {
 		if errors.Is(genErr, generator.ErrCancelled) {
 			globalLogger.Error("generation cancelled — exporting partial data (%d tables)", len(dataset.Tables))
@@ -213,7 +217,7 @@ func (c *generateConfig) validate() error {
 	return nil
 }
 
-func generateData(ctx context.Context, model *schema.Model, config *generateConfig) (*generator.Dataset, error) {
+func generateData(ctx context.Context, model *schema.Model, config *generateConfig, progress generator.ProgressCallback) (*generator.Dataset, error) {
 	g, err := graph.Build(model)
 	if err != nil {
 		return nil, fmt.Errorf("building graph: %w", err)
@@ -237,6 +241,7 @@ func generateData(ctx context.Context, model *schema.Model, config *generateConf
 		Model:         model,
 		Graph:         g,
 		SemanticGraph: sg,
+		Progress:      progress,
 	}
 
 	dataset, err := generator.Generate(plan, genCtx)
