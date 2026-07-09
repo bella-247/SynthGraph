@@ -6,7 +6,32 @@
 // never know or care about the original schema format.
 package parser
 
-import "synthgraph/internal/schema"
+import (
+	"fmt"
+
+	"synthgraph/internal/schema"
+)
+
+// ParseError is a structured error returned when parsing a schema fails.
+// It carries positional information (line:col) when available, plus an
+// optional wrapped Err for error unwrapping (errors.Is / errors.As).
+type ParseError struct {
+	Line    int
+	Col     int
+	Message string
+	Err     error // optional wrapped error, e.g. from pg_query
+}
+
+func (e *ParseError) Error() string {
+	if e.Line > 0 && e.Col > 0 {
+		return fmt.Sprintf("line %d:%d: %s", e.Line, e.Col, e.Message)
+	}
+	return e.Message
+}
+
+func (e *ParseError) Unwrap() error {
+	return e.Err
+}
 
 // SchemaParser is the interface that all dialect-specific parsers implement.
 //
