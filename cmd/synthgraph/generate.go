@@ -178,6 +178,11 @@ func parseGenerateFlags(args []string) (*generateConfig, error) {
 	return config, nil
 }
 
+const (
+	maxRows       = 100_000
+	maxSchemaSize = 10 << 20 // 10 MB
+)
+
 func (c *generateConfig) validate() error {
 	if c.input == "" {
 		return fmt.Errorf("--input is required")
@@ -185,9 +190,18 @@ func (c *generateConfig) validate() error {
 	if c.rows < 0 {
 		return fmt.Errorf("--rows must be non-negative")
 	}
+	if c.rows > maxRows {
+		return fmt.Errorf("--rows exceeds maximum (%d)", maxRows)
+	}
+	fi, err := os.Stat(c.input)
+	if err != nil {
+		return fmt.Errorf("reading input file: %w", err)
+	}
+	if fi.Size() > maxSchemaSize {
+		return fmt.Errorf("schema file too large (%d bytes, max %d)", fi.Size(), maxSchemaSize)
+	}
 	switch c.format {
 	case "sql", "csv":
-		// valid
 	default:
 		return fmt.Errorf("unsupported format %q: use sql or csv", c.format)
 	}
