@@ -4,7 +4,7 @@
 *skills*
 .*/
 !.github
-
+*node_modules/
 # Binaries for programs and plugins
 *.exe
 *.exe~
@@ -49,3 +49,4 @@ CLAUDE.md
 *synthgraph.exe*
 
 bin/
+tests/
