@@ -50,3 +50,4 @@ CLAUDE.md
 
 bin/
 tests/
+*.log
