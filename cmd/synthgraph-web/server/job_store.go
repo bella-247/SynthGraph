@@ -40,9 +40,9 @@ type jobDetail struct {
 }
 
 type JobStore struct {
-	mu         sync.Mutex
-	jobs       []*Job
-	nextID     int
+	mu          sync.Mutex
+	jobs        []*Job
+	nextID      int
 	persistPath string
 }
 
@@ -158,4 +158,3 @@ func (jobStore *JobStore) loadFromDisk() {
 		}
 	}
 }
-

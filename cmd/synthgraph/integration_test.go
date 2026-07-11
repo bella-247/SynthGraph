@@ -344,7 +344,7 @@ func TestProgressCallback(t *testing.T) {
 	}
 
 	type call struct {
-		table string
+		table    string
 		n, total int
 	}
 	var calls []call

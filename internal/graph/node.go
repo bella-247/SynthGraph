@@ -52,20 +52,20 @@ type Node struct {
 
 // TableData carries all table-level metadata needed by downstream renderers.
 type TableData struct {
-	Name       string                    `json:"name"`
-	PrimaryKey []string                  `json:"primary_key"`
-	Unique     [][]string                `json:"unique,omitempty"`
-	Checks     []schema.CheckConstraint  `json:"checks,omitempty"`
+	Name       string                   `json:"name"`
+	PrimaryKey []string                 `json:"primary_key"`
+	Unique     [][]string               `json:"unique,omitempty"`
+	Checks     []schema.CheckConstraint `json:"checks,omitempty"`
 }
 
 // ColumnData carries all column-level metadata needed by downstream renderers.
 type ColumnData struct {
-	Type         string   `json:"type"`
-	Length       int      `json:"length,omitempty"`
-	Precision    int      `json:"precision,omitempty"`
-	Nullable     bool     `json:"nullable"`
-	Default      *string  `json:"default,omitempty"`
-	IsPrimaryKey bool     `json:"is_primary_key"`
+	Type         string  `json:"type"`
+	Length       int     `json:"length,omitempty"`
+	Precision    int     `json:"precision,omitempty"`
+	Nullable     bool    `json:"nullable"`
+	Default      *string `json:"default,omitempty"`
+	IsPrimaryKey bool    `json:"is_primary_key"`
 }
 
 // EnumData carries all enum-level metadata needed by downstream renderers.

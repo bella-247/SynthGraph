@@ -110,8 +110,8 @@ func Validate(dataset *generator.Dataset, model *schema.Model) []ValidationError
 		schemaTable := model.TableMap[table.TableName]
 		if schemaTable == nil {
 			errs = append(errs, ValidationError{
-				Table: table.TableName,
-				Rule:  "INTERNAL",
+				Table:   table.TableName,
+				Rule:    "INTERNAL",
 				Message: fmt.Sprintf("table %q not found in schema model", table.TableName),
 			})
 			continue

@@ -107,7 +107,7 @@ func (translator *schemaTranslator) validateForeignKeys(table *tableBuilder) err
 		if targetIndex == -1 {
 			return fmt.Errorf("table %q: foreign key %v references unknown table %q", table.name, foreignKey.Columns, foreignKey.RefTable)
 		}
-		
+
 		targetTable := &translator.tables[targetIndex]
 		targetColumns := make(map[string]bool, len(targetTable.columns))
 		for _, column := range targetTable.columns {

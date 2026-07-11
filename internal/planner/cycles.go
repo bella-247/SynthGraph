@@ -274,7 +274,7 @@ func updateDeferredFKFromEdge(deferredFK *DeferredFK, edge *graph.Edge, tableNod
 // A breakpoint is an EdgeKindReferences edge where all FK source columns
 // are nullable. Returns nil if no such edge exists.
 func findBreakpoint(schemaGraph *graph.Graph, component []string) *graph.Edge {
-		componentSet := graph.StringSet(component)
+	componentSet := graph.StringSet(component)
 
 	for _, edge := range schemaGraph.Edges {
 		if edge.Kind != graph.EdgeKindReferences {

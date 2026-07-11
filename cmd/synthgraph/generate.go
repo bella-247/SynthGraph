@@ -273,7 +273,7 @@ func exportData(config *generateConfig, dataset *generator.Dataset, model *schem
 		return exporter.ExportSQL(writer, dataset, model, exportCfg)
 	case "csv":
 		exportCfg := &exporter.ExportConfig{
-			SchemaName:   config.schemaName,
+			SchemaName:    config.schemaName,
 			IncludeHeader: true,
 		}
 		return exporter.ExportCSV(writer, dataset, model, exportCfg)

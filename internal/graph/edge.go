@@ -65,9 +65,9 @@ type Edge struct {
 // convention. The column mapping is stored here as metadata so that renderers
 // can display it without re-parsing the schema.
 type FKMetadata struct {
-	LocalColumns   []string         `json:"local_columns"`
-	ForeignColumns []string         `json:"foreign_columns"`
-	OnDelete       schema.FKAction  `json:"on_delete"`
-	OnUpdate       schema.FKAction  `json:"on_update"`
-	Cardinality    Cardinality      `json:"cardinality,omitempty"`
+	LocalColumns   []string        `json:"local_columns"`
+	ForeignColumns []string        `json:"foreign_columns"`
+	OnDelete       schema.FKAction `json:"on_delete"`
+	OnUpdate       schema.FKAction `json:"on_update"`
+	Cardinality    Cardinality     `json:"cardinality,omitempty"`
 }

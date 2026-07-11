@@ -238,4 +238,3 @@ func pickUniqueFKValue(pkValues []any, row GeneratedRow, colName string, fkInfo 
 	}
 	return pkValues[startIdx]
 }
-

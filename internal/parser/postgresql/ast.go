@@ -52,9 +52,9 @@ type ColumnDef struct {
 	Name         string
 	Type         ColumnType
 	NotNull      bool
-	Default      string // raw default expression, empty if none
-	IsPrimaryKey bool   // inline PRIMARY KEY (column-level)
-	IsUnique     bool   // inline UNIQUE (column-level)
+	Default      string       // raw default expression, empty if none
+	IsPrimaryKey bool         // inline PRIMARY KEY (column-level)
+	IsUnique     bool         // inline UNIQUE (column-level)
 	References   *InlineFKRef // inline REFERENCES (column-level FK), nil if none
 	Comment      string
 }

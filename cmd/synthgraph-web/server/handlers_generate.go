@@ -69,7 +69,7 @@ func exportDataset(dataset *generator.Dataset, model *schema.Model, format strin
 	pipeReader, pipeWriter := io.Pipe()
 	go func() {
 		exportConfig := &exporter.ExportConfig{
-			SchemaName:   schemaName,
+			SchemaName:    schemaName,
 			IncludeHeader: true,
 		}
 		var exportError error
@@ -156,12 +156,12 @@ func (server *Server) handleGenerate(responseWriter http.ResponseWriter, request
 	server.jobStore.Add(job)
 
 	writeJSON(responseWriter, http.StatusOK, map[string]interface{}{
-		"job_id":  job.ID,
-		"status":  "completed",
-		"tables":  len(dataset.Tables),
-		"errors":  partialErrors,
-		"data":    string(exportedData),
-		"format":  requestBody.Format,
+		"job_id": job.ID,
+		"status": "completed",
+		"tables": len(dataset.Tables),
+		"errors": partialErrors,
+		"data":   string(exportedData),
+		"format": requestBody.Format,
 	})
 }
 
@@ -185,14 +185,14 @@ func (server *Server) handleGetJob(responseWriter http.ResponseWriter, request *
 	}
 
 	writeJSON(responseWriter, http.StatusOK, &jobDetail{
-		ID:     job.ID,
-		Status: job.Status,
+		ID:      job.ID,
+		Status:  job.Status,
 		Created: job.Created,
-		Config: job.Config,
-		Tables: job.Tables,
-		Errors: job.Errors,
-		Data:   string(job.Data),
-		Format: job.Format,
+		Config:  job.Config,
+		Tables:  job.Tables,
+		Errors:  job.Errors,
+		Data:    string(job.Data),
+		Format:  job.Format,
 	})
 }
 

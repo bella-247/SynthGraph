@@ -250,7 +250,7 @@ func (server *Server) handleGenerateStream(responseWriter http.ResponseWriter, r
 		default:
 		}
 		exportConfig := &exporter.ExportConfig{
-			SchemaName:   schemaName,
+			SchemaName:    schemaName,
 			IncludeHeader: true,
 		}
 		var exportError error
