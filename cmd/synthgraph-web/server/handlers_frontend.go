@@ -61,7 +61,7 @@ func (server *Server) handleHealth(responseWriter http.ResponseWriter, request *
 	jobs := server.jobStore.List()
 	writeJSON(responseWriter, http.StatusOK, map[string]interface{}{
 		"status":     "ok",
-		"version":    "0.1.0",
+		"version":    "1.0.0",
 		"uptime":     uptime,
 		"goroutines": runtime.NumGoroutine(),
 		"jobs":       len(jobs),

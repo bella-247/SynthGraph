@@ -13,7 +13,31 @@ INSERT INTO orders VALUES (1, 1, 'pending'),        (2, 2, 'shipped');
 -- Every order.user_id matches a real user. Every email is unique. It just works.
 ```
 
-No manual seed files. No foreign key violations. No frustration.
+No manual seed files. No foreign key violations.
+
+---
+
+## Table of Contents
+
+- [What is SynthGraph?](#what-is-synthgraph)
+- [Quick Install](#quick-install)
+- [2-Minute Walkthrough](#2-minute-walkthrough)
+- [How It Works](#how-it-works)
+- [Notable Features](#notable-features)
+- [Web App](#web-app)
+- [Commands](#commands)
+- [Further Reading](#further-reading)
+- [License](#license)
+
+---
+
+## What is SynthGraph?
+
+SynthGraph is a CLI tool (with an optional web UI) that generates constraint-compliant test data from SQL DDL schemas.
+
+You give it a `CREATE TABLE` schema. It parses it, understands every primary key, foreign key, unique constraint, enum type, and default value — then generates INSERT statements where every reference is valid, every email is unique, and every NOT NULL column has a meaningful value.
+
+It supports PostgreSQL syntax and generates SQL or CSV output.
 
 ---
 
@@ -37,7 +61,11 @@ irm https://raw.githubusercontent.com/bella-247/SynthGraph/main/scripts/install.
 CGO_ENABLED=1 go install github.com/bella-247/SynthGraph/cmd/synthgraph@latest
 ```
 
-> **What is CGO?** SynthGraph uses the real PostgreSQL parser to read SQL schemas. That parser is written in C, so Go needs CGO to talk to it. On Windows, you'll need [MinGW-w64](https://www.msys2.org/) (GCC for Windows). On macOS, run `xcode-select --install`. On Linux, `sudo apt install gcc libpq-dev`.
+> **What is CGO and why do I need it?** SynthGraph uses the real PostgreSQL parser (written in C) to read SQL schemas. Go needs CGO to link against it. On Windows, install [MinGW-w64](https://www.msys2.org/) via MSYS2. On macOS, run `xcode-select --install`. On Linux, `sudo apt install gcc libpq-dev`.
+
+### Download a pre-built binary
+
+Grab the latest release from [github.com/bella-247/SynthGraph/releases](https://github.com/bella-247/SynthGraph/releases).
 
 ---
 
@@ -81,34 +109,68 @@ synthgraph generate -i shop.sql -o seed.sql
 psql -d mydb -f seed.sql
 ```
 
-That's it. You now have 10 users, 10 products, and 10 orders — all with valid foreign keys.
+You now have 10 users, 10 products, and 10 orders — all referencing real rows.
 
-### Try different options
+### More options
 
 ```bash
-synthgraph generate -i shop.sql -r 100     # 100 rows per table
-synthgraph generate -i shop.sql -f csv      # CSV instead of SQL
-synthgraph generate -i shop.sql -s 12345    # fixed seed (repeatable output)
+synthgraph generate -i shop.sql -r 100          # 100 rows per table
+synthgraph generate -i shop.sql -f csv           # CSV output
+synthgraph generate -i shop.sql -s 12345         # fixed seed for repeatable data
+synthgraph generate -i shop.sql --schema-name public   # schema-qualified names
 ```
 
 ---
 
-## Web App (graphical interface)
+## How It Works
 
-SynthGraph also ships with a browser UI that shows your schema as an interactive diagram:
+SynthGraph processes your schema through a pipeline of six stages, each a pure function:
+
+```text
+SQL → Parse → Graph → Plan → Generate → Validate → SQL / CSV
+```
+
+| Stage | What happens |
+|-------|-------------|
+| **Parse** | Reads your SQL DDL using the real PostgreSQL parser (via CGO). Extracts tables, columns, types, constraints, enums. |
+| **Graph** | Builds a dependency graph: which tables reference which other tables through foreign keys. Detects cycles (e.g., A → B → A). |
+| **Plan** | Topologically sorts tables so parents generate before children. Breaks cycles with a null-first row strategy. |
+| **Generate** | Walks every table in order, producing rows with realistic values — names, emails, phone numbers, timestamps, addresses — determined by column name and type. Deterministic seeding means the same schema + seed always produces the same data. |
+| **Validate** | Re-checks every constraint (FK, unique, NOT NULL) against the generated output. Catches any edge cases before they reach your database. |
+| **Export** | Formats the result as SQL INSERT statements or CSV. |
+
+For a deep dive into each stage, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+---
+
+## Notable Features
+
+- **Constraint-aware generation** — foreign keys always reference real rows, emails are unique, NOT NULL columns always have values, VARCHAR lengths are respected
+- **Cycle-safe** — even circular FK dependencies (e.g., `employees.manager_id REFERENCES employees(id)`) are handled gracefully using null-first rows
+- **Deterministic by default** — same schema + same seed = same output every time. No surprises between runs
+- **Realistic data** — column names drive value selection (columns named `email` get emails, `phone` gets phone numbers, `city` gets city names). No random garbage
+- **Schema inference** — detects audit columns (`created_at`, `updated_at`), naming patterns, and role-like columns (`is_admin`, `status`) to generate appropriate values
+- **PostgreSQL-native parsing** — uses the actual PostgreSQL parser via CGO. Handles `CREATE TYPE ... AS ENUM`, `DEFAULT` expressions, composite keys, and more
+- **Web UI included** — visual schema diagram, step-by-step generation, job history, one-click downloads
+- **Dual output** — SQL or CSV. Pipe directly into your migration scripts
+
+---
+
+## Web App
+
+SynthGraph includes a browser-based UI at `localhost:8080`:
 
 ```bash
 synthgraph-web
-# → Open http://localhost:8080
 ```
 
-The web app walks you through 4 steps:
+The web app guides you through 4 steps:
 
 | Step | What you do | What you see |
-|------|------------|--------------|
-| **Schema** | Paste SQL or pick a template | Parsed tables, columns, types |
-| **Graph** | Look at the diagram | Tables as boxes, FK relationships as arrows |
-| **Generate** | Set row count, click Generate | Live progress as data is created |
+|------|-------------|--------------|
+| **Schema** | Paste SQL or pick a template | Parsed tables, columns, types, enums |
+| **Graph** | Explore the diagram | Tables as boxes with FK arrows |
+| **Generate** | Set row count, click Generate | Live pipeline progress |
 | **History** | Browse past jobs | Download any result again |
 
 ---
@@ -129,85 +191,49 @@ Generate synthetic data from a SQL schema.
 | `--verbose` | `-v` | — | Show detailed progress |
 | `--schema-name` | — | `""` | Schema name for SQL output (e.g., `public`) |
 | `--config` | `-c` | — | Path to YAML config file |
-| `--init-config` | — | — | Write a default YAML config file and exit |
+| `--init-config` | — | — | Write a default YAML config template and exit |
 
 **Examples:**
 
 ```bash
-synthgraph generate -i schema.sql                          # 10 rows, SQL output, to terminal
+synthgraph generate -i schema.sql                          # 10 rows, SQL output
 synthgraph generate -i schema.sql -o data.sql              # save to file
-synthgraph generate -i schema.sql -r 1000 -f csv -o data.csv  # 1000 rows, CSV
+synthgraph generate -i schema.sql -r 1000 -f csv -o data.csv  # 1000 rows as CSV
+synthgraph generate -i schema.sql --config synthgraph.yaml     # use YAML config
 ```
 
 ### `synthgraph inspect`
 
-Analyze a schema and print its structure.
+Analyze a schema and print its structure — tables, columns, types, enums, and inferred semantics.
 
 ```bash
-synthgraph inspect -i schema.sql                           # tables, columns, enums
-synthgraph inspect -i schema.sql -v                        # + graph + semantic details
+synthgraph inspect -i schema.sql
+synthgraph inspect -i schema.sql -v    # with graph and semantic details
 ```
 
 ### `synthgraph version`
 
 ```bash
 synthgraph version
-# → synthgraph version 0.1.0
+# → synthgraph version 1.0.0
 ```
 
 ---
 
-## What makes SynthGraph different?
+## Further Reading
 
-Other generators create random values in isolation — they don't know that `orders.user_id` must match a real user. SynthGraph reads your **entire schema**, builds a dependency graph, and generates in the right order:
-
-```sql
-CREATE TABLE users   (id INT PRIMARY KEY);
-CREATE TABLE orders  (id INT PRIMARY KEY, user_id INT REFERENCES users(id));
-
--- Other generators:
--- orders.user_id might be 9999 — no user with that ID. Violation. ❌
-
--- SynthGraph:
--- Generates users FIRST, then orders referencing those users. Guaranteed valid. ✅
-```
-
-### Supported constraints
-
-| Constraint | Supported? |
-|-----------|:----------:|
-| Primary keys (single + composite) | ✅ |
-| Foreign keys (single + composite) | ✅ |
-| Unique constraints | ✅ |
-| NOT NULL | ✅ |
-| Enum types (`CREATE TYPE ... AS ENUM`) | ✅ |
-| VARCHAR / DECIMAL length | ✅ |
-| Circular FK dependencies (e.g. A → B → A) | ✅ |
-| `DEFAULT` expressions | ✅ |
+| Document | What it covers |
+|----------|---------------|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Full pipeline breakdown, design decisions, file layout |
+| [docs/cli_reference.md](docs/cli_reference.md) | Complete CLI reference with all flags and examples |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Building from source, running tests, dev workflow |
+| [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) | How to contribute, commit conventions, PR workflow |
+| [docs/Future-Plan.md](docs/Future-Plan.md) | Upcoming features, roadmap ideas |
+| [docs/DESIGN.md](docs/DESIGN.md) | Design philosophy, trade-offs, why certain choices were made |
+| [docs/graph_model.md](docs/graph_model.md) | How the dependency graph works internally |
+| [docs/constraint_system.md](docs/constraint_system.md) | How constraints are tracked and enforced |
 
 ---
-
-## Development
-
-See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for building from source, running tests, and extending SynthGraph.
-
-```bash
-# Quick test (no CGO needed — skips parser tests)
-make test-quick          # Linux/macOS
-.\dev.ps1 test quick     # Windows
-
-# Full test suite (requires CGO)
-make test                # Linux/macOS
-.\dev.ps1 test all       # Windows
-```
-
-## Architecture
-
-```
-SQL → Parser → Graph → Planner → Generator → Validator → SQL / CSV
-```
-
-Each stage is a pure function. Details in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## License
 
