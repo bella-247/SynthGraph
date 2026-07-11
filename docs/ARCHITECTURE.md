@@ -38,9 +38,6 @@ synthgraph/
 │   │       ├── server.go              # HTTP router + middleware setup
 │   │       ├── server_test.go
 │   │       └── types.go               # Shared request/response types
-│   │
-│   └── serveviz/
-│       └── main.go                    # Interactive serving visualizer
 │
 ├── internal/
 │   ├── schema/
@@ -67,10 +64,9 @@ synthgraph/
 │   │       └── types_test.go
 │   │
 │   ├── graph/
-│   │   ├── graph.go                   # Graph, Node, Edge, SchemaGraph types
+│   │   ├── graph.go                   # Graph, Node, Edge types
 │   │   ├── builder.go                 # Build() — schema model → graph
-│   │   ├── topo.go                    # TopologicalSort() — Kahn's algorithm
-│   │   ├── cycles.go                  # FindCycles() — Tarjan's SCC (iterative, explicit stack)
+│   │   ├── cycles.go                  # Tarjan's SCC (iterative, explicit stack)
 │   │   ├── cardinality.go             # Edge cardinality inference
 │   │   ├── node.go / nodes.go         # Node helpers
 │   │   ├── edge.go / edges.go         # Edge helpers
@@ -123,7 +119,7 @@ synthgraph/
 │   │
 │   ├── validator/
 │   │   ├── validator.go               # Validate() — full post-generation constraint check
-│   │   └── validator_test.go          # 19+ tests covering all constraint rules
+│   │   └── validator_test.go          # Tests covering all constraint rules
 │   │
 │   └── exporter/
 │       ├── exporter.go                # ExportConfig, ExportSQL, ExportCSV
@@ -132,41 +128,34 @@ synthgraph/
 │       └── exporter_test.go
 │
 ├── testdata/
-│   ├── schemas/
-│   │   ├── simple.sql
-│   │   ├── chain.sql
-│   │   ├── cycle_nullable.sql
-│   │   ├── cycle_unresolvable.sql
-│   │   ├── ecommerce.sql
-│   │   └── hr.sql
-│   └── golden/
-│       ├── simple_100.sql
-│       ├── chain_100.sql
-│       ├── ecommerce_100.sql
-│       └── hr_100.sql
+│   └── schemas/
+│       ├── users.sql                  # Minimal single-table (PK, NOT NULL, UNIQUE)
+│       ├── edge_cases.sql             # Composite PKs, cycles, self-ref FKs
+│       └── ecommerce.sql              # Multi-table e-commerce with FKs and enums
 │
 ├── docs/
-│   ├── architecture.md                # This file
+│   ├── ARCHITECTURE.md                # This file
+│   ├── DEVELOPMENT.md                 # Build, test, run guide
+│   ├── CONTRIBUTING.md                # How to contribute
+│   ├── cli_reference.md               # Full CLI reference
 │   ├── graph_model.md                 # Graph theory details
 │   ├── constraint_system.md           # Constraint handling details
-│   └── cli_reference.md               # Full CLI reference
+│   ├── DESIGN.md                      # Web UI design tokens
+│   └── Future-Plan.md                 # Upcoming features
 │
 ├── scripts/
-│   ├── build.sh
-│   ├── test.sh
-│   ├── lint.sh
-│   ├── ci.sh
-│   ├── clean.sh
-│   └── run.sh
+│   ├── install.sh                     # Linux/macOS install script
+│   └── install.ps1                    # Windows install script
 │
 ├── .github/
 │   ├── workflows/
-│   │   ├── ci.yml                     # Test + lint on every PR
-│   │   └── release.yml                # Build binaries on tag push
+│   │   ├── ci.yml                     # Test + vet + build on every PR
+│   │   └── release.yml                # Test + cross-compile + Docker on tag push
 │   ├── ISSUE_TEMPLATE/
 │   │   ├── bug_report.md
 │   │   └── feature_request.md
-│   └── PULL_REQUEST_TEMPLATE.md
+│   ├── PULL_REQUEST_TEMPLATE.md
+│   └── copilot-instructions.md
 │
 ├── go.mod
 ├── go.sum
@@ -174,8 +163,6 @@ synthgraph/
 ├── dev.ps1                            # Windows development automation
 ├── Dockerfile
 ├── README.md
-├── CONTRIBUTING.md
-├── ROADMAP.md
 └── LICENSE                            # MIT
 ```
 
@@ -228,7 +215,7 @@ CLI flags
     ▼   ── SemanticGraph ──
     │
     ▼
-[Topological Sort + Cycle Detection] internal/graph/topo.go, cycles.go
+[Topological Sort + Cycle Detection] internal/planner/topsort.go, internal/graph/cycles.go
     │  Kahn's algorithm + Tarjan's SCC
     │  returns ordered tables + cycle members + nullable breakpoints
     │
@@ -432,44 +419,52 @@ type PostGenValidationError struct {
 ## Makefile Targets
 
 ```makefile
-build:
-    go build -ldflags="-X main.version=$(VERSION)" -o bin/synthgraph ./cmd/synthgraph
+build-cli:
+    CGO_ENABLED=1 go build -o bin/synthgraph ./cmd/synthgraph/
+
+build-web:
+    CGO_ENABLED=1 go build -o bin/synthgraph-web ./cmd/synthgraph-web/
+
+build-all: build-cli build-web   # also: build (alias)
+
+run-web:
+    CGO_ENABLED=1 go run ./cmd/synthgraph-web/ --port $(PORT)
+
+run-cli:
+    CGO_ENABLED=1 go run ./cmd/synthgraph/ generate --input $(SCHEMA) --rows $(ROWS)
 
 test:
-    go test ./... -race -count=1
+    CGO_ENABLED=1 go test ./... -count=1
 
-test-golden:
-    go test ./... -run TestGolden -update=false
+test-quick:
+    go test ./internal/... ./cmd/synthgraph/... ./cmd/synthgraph-web/server/... -count=1
+
+test-server:
+    go test ./cmd/synthgraph-web/server/... -v -count=1
 
 lint:
-    golangci-lint run ./...
-
-bench:
-    go test ./... -bench=. -benchmem
+    go vet ./...
 
 clean:
-    rm -rf bin/
+    rm -rf bin/ coverage.out
 
-release:
-    GOOS=linux   GOARCH=amd64 go build -o dist/synthgraph-linux-amd64   ./cmd/synthgraph
-    GOOS=darwin  GOARCH=amd64 go build -o dist/synthgraph-darwin-amd64  ./cmd/synthgraph
-    GOOS=darwin  GOARCH=arm64 go build -o dist/synthgraph-darwin-arm64  ./cmd/synthgraph
-    GOOS=windows GOARCH=amd64 go build -o dist/synthgraph-windows-amd64.exe ./cmd/synthgraph
+ci: lint build-all test
 ```
 
-Note: cross-compilation requires `CGO_ENABLED=1` (or `$env:CGO_ENABLED='1'` on PowerShell) for the PostgreSQL parser (depends on `pg_query_go` via CGO). Ensure a C cross-compiler is available for each target platform, or see `docs/cli_reference.md` for alternative build setups.
+Note: cross-compilation requires `CGO_ENABLED=1` (or `$env:CGO_ENABLED='1'` on PowerShell) for the PostgreSQL parser (depends on `pg_query_go` via CGO). Ensure a C cross-compiler is available for each target platform, or see `docs/DEVELOPMENT.md` for alternative build setups.
 
 ---
 
 ## CI Pipeline (GitHub Actions)
 
-**On every PR:**
+**On every PR/push to main or dev:**
 1. `go vet ./...`
-2. `golangci-lint run`
-3. `go test ./... -race`
-4. Build binary (sanity check)
+2. `go test ./... -race` (full suite, CGO enabled)
+3. Build CLI + web binaries (sanity check)
+4. Test server package (no CGO needed)
 
 **On tag push (`v*`):**
-1. Run full test suite
-2. Build release binaries for all 4 platforms
-3. Create GitHub Release with binaries attached
+1. Run full test suite with race detector
+2. Build Linux release binaries (amd64 + arm64) for CLI and web app
+3. Build and push Docker image to GHCR
+4. Create GitHub Release with binaries attached

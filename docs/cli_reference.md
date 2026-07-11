@@ -8,17 +8,17 @@ Complete guide to using SynthGraph from the command line.
 
 ### What you need
 
-- **Go 1.21+** installed (`go version` to check)
+- **Go 1.26+** installed (`go version` to check)
 - **GCC** installed (for CGO — [Windows setup help](#windows-setup))
 
 ### Install the CLI
 
 ```bash
 # macOS/Linux (bash/zsh):
-CGO_ENABLED=1 go install ./cmd/synthgraph@latest
+CGO_ENABLED=1 go install ./cmd/synthgraph
 
 # Windows (PowerShell):
-# $env:CGO_ENABLED='1'; go install ./cmd/synthgraph@latest
+# $env:CGO_ENABLED='1'; go install ./cmd/synthgraph
 ```
 
 Or build locally:
@@ -68,10 +68,12 @@ synthgraph generate --input schema.sql --seed 42
 | `--input` | `-i` | Yes | — | Path to your SQL schema file |
 | `--output` | `-o` | No | stdout | Where to save the output file |
 | `--format` | `-f` | No | `sql` | `sql` or `csv` |
-| `--rows` | `-r` | No | `10` | Number of rows per table |
+| `--rows` | `-r` | No | `10` | Number of rows per table (max: 100,000) |
 | `--seed` | `-s` | No | `42` | Random seed (same seed = same data) |
-| `--schema-name` | — | No | — | Schema name for SQL output (e.g., `public`) |
-| `--verbose` | `-v` | No | — | Show detailed progress |
+| `--verbose` | `-v` | No | `false` | Show detailed progress |
+| `--schema-name` | — | No | `""` | Schema name for SQL output (e.g., `public`) |
+| `--config` | `-c` | No | — | Path to YAML config file |
+| `--init-config` | — | No | — | Write a default YAML config file and exit |
 
 ### Examples by use case
 

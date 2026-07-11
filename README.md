@@ -127,6 +127,9 @@ Generate synthetic data from a SQL schema.
 | `--format` | `-f` | `sql` | Output format: `sql` or `csv` |
 | `--seed` | `-s` | `42` | Random seed — same seed = same data every time |
 | `--verbose` | `-v` | — | Show detailed progress |
+| `--schema-name` | — | `""` | Schema name for SQL output (e.g., `public`) |
+| `--config` | `-c` | — | Path to YAML config file |
+| `--init-config` | — | — | Write a default YAML config file and exit |
 
 **Examples:**
 

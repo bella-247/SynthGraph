@@ -43,10 +43,11 @@ Features and enhancements deferred beyond the current release. Items are grouped
 
 ## Developer Experience & Operations
 
+- **Pre-built release binaries** — provide cross-compiled CLI binaries for Linux (amd64, arm64) via GitHub Releases and GitHub Container Registry Docker images
 - **Workspace configuration (`.synthgraph`)** — per-project config for row counts, seeds, and generation profiles
 - **Artifact caching** — cache `schema.Model`, `SchemaGraph`, and `GenerationPlan`; invalidate on schema change
-- **CI with coverage** — add CI pipeline with `go test -coverprofile`; document CGO build requirements
-- **Graceful shutdown** — handle SIGINT with partial dataset output
+- ~~**CI with coverage** — add CI pipeline with `go test -coverprofile`; document CGO build requirements~~ ✅ *Done*
+- ~~**Graceful shutdown** — handle SIGINT with partial dataset output~~ ✅ *Done*
 - **Per-table error recovery** — continue generating remaining tables when one fails
 - **Incremental generation** — regenerate only tables whose schema or row count changed since the last run
 - **Bulk / scheduled generation** — queue and run multiple generation jobs

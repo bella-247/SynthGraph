@@ -30,7 +30,7 @@ Everything you need to build, test, run, and extend SynthGraph during developmen
 
 | Tool | Version | Purpose |
 |---|---|---|
-| **Go** | 1.21+ | Language runtime and compiler |
+| **Go** | 1.26+ | Language runtime and compiler |
 | **GCC / MinGW-w64** | any | Required by CGO for `pg_query_go` (PostgreSQL parser bindings) |
 
 ### Installing GCC
@@ -55,7 +55,7 @@ sudo apt-get install gcc libpq-dev
 ### Verify setup
 
 ```bash
-go version       # → go 1.21+
+go version       # → go 1.26+
 gcc --version    # → gcc (x86_64-posix) ...
 ```
 
@@ -85,9 +85,6 @@ synthgraph/
  │   │       ├── handlers_graph.go     # Graph + semantic handlers
  │   │       ├── handlers_generate.go  # Generation pipeline + job listing handlers
  │   │       └── server_test.go        # 41 unit tests for handlers, middleware, job store, SSE, rate limiter
- │   └── serveviz/
- │       ├── main.go            # Lightweight read-only graph visualizer
- │       └── index.html         # Embedded HTML (Cytoscape.js)
 │
 ├── internal/
 │   ├── schema/
@@ -110,10 +107,12 @@ synthgraph/
 │   ├── graph/
 │   │   ├── graph.go           # Graph, Node, Edge types
 │   │   ├── builder.go         # Build() — schema.Model → Graph
-│   │   ├── topo.go            # TopologicalSort() — Kahn's algorithm
-│   │   ├── cycles.go          # FindCycles() — Tarjan's SCC
+│   │   ├── cycles.go          # Tarjan's SCC
+│   │   ├── cardinality.go     # Edge cardinality inference
+│   │   ├── node.go / nodes.go # Node helpers
+│   │   ├── edge.go / edges.go # Edge helpers
 │   │   ├── validate.go        # Graph validation helpers
-│   │   └── graph_test.go
+│   │   └── *_test.go
 │   │
 │   ├── semantic/
 │   │   ├── semantic_graph.go  # SemanticGraph, SemanticNode, SemanticRelationship types
@@ -143,12 +142,10 @@ synthgraph/
 │   │   ├── errors.go          # GenError type
 │   │   └── generator_test.go
 │   │
- │   ├── validator/                  # DEPRECATED — removed, constraint checks moved into generator
- │   │   ├── validator.go
- │   │   ├── unique.go
- │   │   ├── foreign_key.go
- │   │   └── validator_test.go
- │   │
+│   ├── validator/
+│   │   ├── validator.go       # Post-generation constraint validation
+│   │   └── validator_test.go
+│   │
 │   └── exporter/
 │       ├── exporter.go        # ExportConfig type
 │       ├── sql.go             # ExportSQL() — INSERT statements
@@ -156,20 +153,21 @@ synthgraph/
 │       └── exporter_test.go
 │
 ├── testdata/
-│   └── schemas/
-│       ├── users.sql          # Single-table schema
-│       ├── ecommerce.sql      # Multi-table e-commerce schema
-│       └── edge_cases.sql     # Composite PKs, cycles, enums
+│   ├── schemas/
+│   │   ├── users.sql          # Minimal single-table schema
+│   │   ├── ecommerce.sql      # Multi-table e-commerce schema
+│   │   └── edge_cases.sql     # Composite PKs, cycles, enums
+│   └── golden/                # (reserved for golden tests)
 │
 ├── docs/
 │   ├── DEVELOPMENT.md         # ← This file
 │   ├── ARCHITECTURE.md        # Full architectural deep-dive
+│   ├── CONTRIBUTING.md        # How to contribute
 │   ├── cli_reference.md       # User-facing CLI reference
 │   ├── graph_model.md         # Graph data model
 │   ├── constraint_system.md   # Constraint system design
 │   ├── DESIGN.md              # Web UI design tokens
-│   ├── Future-Plan.md         # Upcoming features
-│   └── CONTRIBUTING.md        # How to contribute
+│   └── Future-Plan.md         # Upcoming features
 │
 ├── go.mod
 ├── go.sum
@@ -198,13 +196,19 @@ SQL File → Parser (CGO) → AST → Normalize → Link → Validate → Build
                                                         │  GenerationPlan
                                                         │     │
                                                         │     ▼
-                                                         │  generator.Generate()
-                                                         │     │
-                                                         │     ▼
-                                                         │  Dataset
-                                                         │     │
-                                                         │     ▼
-                                                         │  exporter.ExportSQL/ExportCSV
+                                                        │  generator.Generate()
+                                                        │     │
+                                                        │     ▼
+                                                        │  Dataset
+                                                        │     │
+                                                        │     ▼
+                                                        │  validator.Validate()
+                                                        │     │
+                                                        │     ▼
+                                                        │  ValidatedDataset
+                                                        │     │
+                                                        │     ▼
+                                                        │  exporter.ExportSQL/ExportCSV
 ```
 
 ---
@@ -223,8 +227,7 @@ rtk CGO_ENABLED=1 go build ./...
 # Build the web application
 rtk CGO_ENABLED=1 go build -o synthgraph-web.exe ./cmd/synthgraph-web/
 
-# Build the lightweight visualizer
-rtk CGO_ENABLED=1 go build -o serveviz.exe ./cmd/serveviz/
+
 ```
 
 > **PowerShell note:** Use `$env:CGO_ENABLED='1'` instead of the `CGO_ENABLED=1` prefix shown in examples.
@@ -246,11 +249,13 @@ Only packages that don't depend on the PostgreSQL parser will compile. The parse
 CGO cross-compilation is complex. Build natively on the target platform, or use Docker:
 
 ```dockerfile
-FROM golang:1.22-bookworm
-RUN apt-get update && apt-get install -y gcc libpq-dev
-WORKDIR /app
+FROM golang:1.26-alpine
+RUN apk add --no-cache gcc musl-dev
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
-RUN CGO_ENABLED=1 go build -o synthgraph ./cmd/synthgraph/
+RUN CGO_ENABLED=1 go build -o /synthgraph ./cmd/synthgraph
 ```
 
 ---
@@ -488,7 +493,7 @@ rtk ./synthgraph-web.exe
 
 Then open http://localhost:8080 in your browser.
 
-### Pipeline UI (4 pages)
+### Pipeline UI (5 pages)
 
 The SPA walks you through the full SynthGraph pipeline:
 
@@ -557,34 +562,6 @@ es.addEventListener('complete', e => {
 
 - `csv` — RFC 4180 CSV (one file per table concatenated, with headers)
 - `sql` — `INSERT INTO` statements wrapped in a transaction (`BEGIN/COMMIT`)
-
----
-
-## Running the Lightweight Graph Visualizer
-
-The older `serveviz` command provides a simpler read-only graph view (no generation UI):
-
-```bash
-# Start with a schema file
-rtk CGO_ENABLED=1 go run ./cmd/serveviz/ --schema testdata/schemas/ecommerce.sql
-
-# Custom port
-rtk CGO_ENABLED=1 go run ./cmd/serveviz/ --schema testdata/schemas/ecommerce.sql --port 9090
-
-# Using the compiled binary
-rtk ./serveviz.exe --schema testdata/schemas/ecommerce.sql
-```
-
-Then open http://localhost:8080 in your browser.
-
-**Features:**
-- Interactive graph layout (fcose) — drag, zoom, pan
-- Table cards with column details (PK/FK badges, types, nullable)
-- Edge tooltips showing FK column mappings
-- Detail panel on click — columns, FKs, reverse references
-- Cardinality indicators (1—1, 1—*, *—*)
-- Enum nodes shown as diamond shapes
-- Neighborhood highlighting on hover
 
 ---
 
@@ -718,10 +695,7 @@ rtk go run ./cmd/synthgraph/ inspect -i testdata/schemas/ecommerce.sql --graph
 
 ### Visualize the graph in a browser
 
-```bash
-rtk CGO_ENABLED=1 go run ./cmd/serveviz/ --schema testdata/schemas/ecommerce.sql
-# Then open http://localhost:8080
-```
+Use the web app: start `synthgraph-web`, paste your SQL on the Schema page, then visit the Graph page. See [Running the Web Application](#running-the-web-application).
 
 ### Run a quick generation to stdout
 
@@ -771,7 +745,7 @@ The CGO adapter uses build tags. Ensure `CGO_ENABLED=1` is set. On platforms whe
 
 ### `No such layout 'fcose' found` in the visualizer
 
-The web app and `serveviz` HTML pages load `cytoscape-fcose` from unpkg. If the CDN URL is wrong or the file isn't the browser bundle, switch the script tag to:
+The web app HTML loads `cytoscape-fcose` from unpkg. If the CDN URL is wrong or the file isn't the browser bundle, switch the script tag in `cmd/synthgraph-web/index.html` to:
 
 ```html
 <script src="https://cdn.jsdelivr.net/npm/cytoscape-fcose/dist/cytoscape-fcose.min.js"></script>
@@ -788,31 +762,19 @@ rtk .\synthgraph.exe generate -i schema.sql
 
 ## Dev Scripts
 
-For convenience, a set of scripts automates common operations. Use the `.sh` scripts from Git Bash/WSL, or the unified `dev.ps1` from PowerShell.
-
-### Shell scripts (`scripts/`)
-
-| Script | What it does |
-|---|---|
-| `scripts/build.sh` | Builds all 3 binaries into `bin/` |
-| `scripts/test.sh [mode]` | Test runner — `unit`, `all`, `coverage`, `quick`, `server`, `parser` |
-| `scripts/lint.sh` | `go vet` + `gofmt` check |
-| `scripts/run.sh web [port]` | Start web server |
-| `scripts/run.sh cli [schema]` | Run CLI generator on a schema |
-| `scripts/clean.sh` | Remove build artifacts |
-| `scripts/ci.sh` | Full pipeline: vet → build → test |
-
-### PowerShell (`dev.ps1`)
+A PowerShell dev script automates common operations:
 
 ```powershell
-.\dev.ps1 build              # build all binaries
+.\dev.ps1 build              # build all binaries into bin/
 .\dev.ps1 test               # unit tests (no CGO)
-.\dev.ps1 test all           # full suite (CGO)
+.\dev.ps1 test all           # full suite (CGO required)
 .\dev.ps1 test coverage      # with coverage report
-.\dev.ps1 lint               # vet + format check
-.\dev.ps1 run web            # start server on port 9090
+.\dev.ps1 lint               # go vet + gofmt
+.\dev.ps1 run web            # start server on port 8080
 .\dev.ps1 run web 9090       # custom port
-.\dev.ps1 run cli            # run CLI on sakila schema
+.\dev.ps1 run cli            # run CLI on ecommerce test schema
 .\dev.ps1 clean              # remove build artifacts
-.\dev.ps1 ci                 # full pipeline
+.\dev.ps1 ci                 # full pipeline: vet > build > test
 ```
+
+Alternatively, use `make` targets on Linux/macOS (see [docs/ARCHITECTURE.md](ARCHITECTURE.md#makefile-targets)).
