@@ -32,9 +32,9 @@ func makeLargeSchema(tableCount int) *schema.Model {
 			columns = append(columns, schema.Column{Name: "parent_id", Type: "int"})
 		}
 		tables[i] = &schema.Table{
-			Name:       fmt.Sprintf("table_%d", i),
-			Columns:    columns,
-			PrimaryKey: []string{"id"},
+			Name:        fmt.Sprintf("table_%d", i),
+			Columns:     columns,
+			PrimaryKey:  []string{"id"},
 			ForeignKeys: fks,
 		}
 	}

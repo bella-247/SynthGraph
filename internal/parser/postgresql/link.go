@@ -31,7 +31,7 @@ func (translator *schemaTranslator) resolveForeignKeys(tableIndex map[string]int
 	for tableIndexPosition := range translator.tables {
 		table := &translator.tables[tableIndexPosition]
 		table.fkTargetIndex = make([]int, len(table.fks))
-		
+
 		for foreignKeyIndex, foreignKey := range table.fks {
 			if targetIndex, exists := tableIndex[foreignKey.RefTable]; exists {
 				table.fkTargetIndex[foreignKeyIndex] = targetIndex

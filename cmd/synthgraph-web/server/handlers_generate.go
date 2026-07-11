@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,13 +14,19 @@ import (
 	"synthgraph/internal/exporter"
 	"synthgraph/internal/generator"
 	"synthgraph/internal/graph"
+	"synthgraph/internal/parser"
 	"synthgraph/internal/parser/postgresql"
 	"synthgraph/internal/planner"
 	"synthgraph/internal/schema"
 	"synthgraph/internal/semantic"
 )
 
-func runGenerationPipeline(rawSQL string, rowCount int, seed int64) (*generator.Dataset, *schema.Model, error) {
+const maxSchemaBodySize = 10 << 20 // 10 MB
+
+func runGenerationPipeline(ctx context.Context, rawSQL string, rowCount int, seed int64) (*generator.Dataset, *schema.Model, error) {
+	if len(rawSQL) > maxSchemaBodySize {
+		return nil, nil, fmt.Errorf("schema too large (%d bytes, max %d)", len(rawSQL), maxSchemaBodySize)
+	}
 	parsedModel, parseError := postgresql.New().Parse([]byte(rawSQL))
 	if parseError != nil {
 		return nil, nil, fmt.Errorf("parse error: %w", parseError)
@@ -42,6 +50,7 @@ func runGenerationPipeline(rawSQL string, rowCount int, seed int64) (*generator.
 	}
 
 	generationContext := &generator.GenerationContext{
+		Context:       ctx,
 		GlobalSeed:    uint64(seed),
 		Model:         parsedModel,
 		Graph:         graphInstance,
@@ -60,7 +69,7 @@ func exportDataset(dataset *generator.Dataset, model *schema.Model, format strin
 	pipeReader, pipeWriter := io.Pipe()
 	go func() {
 		exportConfig := &exporter.ExportConfig{
-			SchemaName:   schemaName,
+			SchemaName:    schemaName,
 			IncludeHeader: true,
 		}
 		var exportError error
@@ -117,9 +126,13 @@ func (server *Server) handleGenerate(responseWriter http.ResponseWriter, request
 		requestBody.Format = "csv"
 	}
 
-	dataset, parsedModel, pipelineError := runGenerationPipeline(requestBody.Input, requestBody.Rows, requestBody.Seed)
+	dataset, parsedModel, pipelineError := runGenerationPipeline(request.Context(), requestBody.Input, requestBody.Rows, requestBody.Seed)
 	if pipelineError != nil {
-		writeError(responseWriter, http.StatusInternalServerError, "%v", pipelineError)
+		if pe := (*parser.ParseError)(nil); errors.As(pipelineError, &pe) {
+			writeError(responseWriter, http.StatusBadRequest, "%s", pe.Error())
+		} else {
+			writeError(responseWriter, http.StatusInternalServerError, "%v", pipelineError)
+		}
 		return
 	}
 
@@ -143,12 +156,12 @@ func (server *Server) handleGenerate(responseWriter http.ResponseWriter, request
 	server.jobStore.Add(job)
 
 	writeJSON(responseWriter, http.StatusOK, map[string]interface{}{
-		"job_id":  job.ID,
-		"status":  "completed",
-		"tables":  len(dataset.Tables),
-		"errors":  partialErrors,
-		"data":    string(exportedData),
-		"format":  requestBody.Format,
+		"job_id": job.ID,
+		"status": "completed",
+		"tables": len(dataset.Tables),
+		"errors": partialErrors,
+		"data":   string(exportedData),
+		"format": requestBody.Format,
 	})
 }
 
@@ -172,14 +185,14 @@ func (server *Server) handleGetJob(responseWriter http.ResponseWriter, request *
 	}
 
 	writeJSON(responseWriter, http.StatusOK, &jobDetail{
-		ID:     job.ID,
-		Status: job.Status,
+		ID:      job.ID,
+		Status:  job.Status,
 		Created: job.Created,
-		Config: job.Config,
-		Tables: job.Tables,
-		Errors: job.Errors,
-		Data:   string(job.Data),
-		Format: job.Format,
+		Config:  job.Config,
+		Tables:  job.Tables,
+		Errors:  job.Errors,
+		Data:    string(job.Data),
+		Format:  job.Format,
 	})
 }
 

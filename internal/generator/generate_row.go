@@ -1,7 +1,9 @@
 package generator
 
 import (
+	"context"
 	"fmt"
+	"math/rand/v2"
 
 	"synthgraph/internal/graph"
 	"synthgraph/internal/planner"
@@ -51,34 +53,50 @@ func generateTable(
 	// optionality instead of always picking a FK value.
 	aggFKs := buildAggregationFKSet(ctx.SemanticGraph, tableName)
 
+	cancelCtx := ctx.Context
+	if cancelCtx == nil {
+		cancelCtx = context.Background()
+	}
+
 	for rowIndex := 0; rowIndex < rowCount; rowIndex++ {
+		select {
+		case <-cancelCtx.Done():
+			return generated, nil
+		default:
+		}
+
 		row := make(GeneratedRow, len(table.Columns))
 
-		// Phase 0: Pre-compute cross-column correlated values for this row
-		// (e.g. city/state/zip consistency, first/last/full_name consistency,
-		// temporal coherence: created_at < updated_at, deleted_at distribution).
 		rowValues := precomputeRowValues(table, rng)
 		if semNode != nil {
-			for colName, val := range precomputeTemporalValues(table, semNode.Temporal, rowIndex, rng) {
-				rowValues[colName] = val
+			temporalValues := precomputeTemporalValues(table, semNode.Temporal, rowIndex, rng)
+			if len(temporalValues) > 0 {
+				if rowValues == nil {
+					rowValues = make(map[string]any, len(temporalValues))
+				}
+				for colName, val := range temporalValues {
+					rowValues[colName] = val
+				}
 			}
 		}
 
 		for _, column := range table.Columns {
-			// Use pre-computed correlated values if available.
 			if val, ok := rowValues[column.Name]; ok {
-				row[column.Name] = val
-				continue
+				if tracker.isUniqueColumn(column.Name) && tracker.checkSeen(column.Name, val) {
+				} else {
+					if tracker.isUniqueColumn(column.Name) {
+						tracker.record(column.Name, val)
+					}
+					row[column.Name] = val
+					continue
+				}
 			}
-			// Deferred FK columns: insert as NULL.
 			if deferredCols[column.Name] {
 				row[column.Name] = nil
 				continue
 			}
 
-			// FK columns: pick a PK value from the referenced table.
 			if fkInfo, isFK := isFKColumn(tableFKCols, column.Name); isFK {
-				// Aggregation (optional) FK: leave NULL ~20% of the time.
 				if aggFKs[column.Name] && rng.Float64() < aggFKNullProbability {
 					row[column.Name] = nil
 					continue
@@ -92,31 +110,21 @@ func generateTable(
 						Message: fmt.Sprintf("referenced table %q has no generated PK values", fkInfo.RefTable),
 					}
 				}
-				value := pkValues[rng.IntN(len(pkValues))]
+				value := pickUniqueFKValue(pkValues, row, column.Name, fkInfo, rng, tracker)
 				row[column.Name] = value
 				continue
 			}
 
-			// Semantic-aware generation: use column.Semantic (pre-populated during
-			// semantic analysis) to pick a domain-specific generator (name, email,
-			// phone, etc.) before falling back to the type-based generator.
-			if semGen, hasGen := registry.GeneratorFor(column.Semantic); hasGen {
-				value, err := semGen.Generate(&column, rowIndex, rng)
-				if err != nil {
-					return nil, &GenError{
-						Table:   tableName,
-						Row:     rowIndex,
-						Column:  column.Name,
-						Message: err.Error(),
-					}
-				}
-				row[column.Name] = value
-				continue
+			var columnGen TypeGenerator
+			if _, isEnum := enumValues[column.Type]; isEnum {
+				columnGen = typeGeneratorFor(column.Type, ctx.Model, enumValues)
+			} else if semGen, hasGen := registry.GeneratorFor(column.Semantic); hasGen {
+				columnGen = semGen
+			} else {
+				columnGen = typeGeneratorFor(column.Type, ctx.Model, enumValues)
 			}
 
-			// Type-based fallback: generate from the column's database type.
-			generator := typeGeneratorFor(column.Type, ctx.Model, enumValues)
-			value, err := generator.Generate(&column, rowIndex, rng)
+			value, err := columnGen.Generate(&column, rowIndex, rng)
 			if err != nil {
 				return nil, &GenError{
 					Table:   tableName,
@@ -126,15 +134,12 @@ func generateTable(
 				}
 			}
 
-			// Length constraint: truncate string values that exceed column length.
-			// Decimal types are excluded — Length represents total digit count, not string length.
 			if strVal, ok := value.(string); ok && column.Length > 0 && len(strVal) > column.Length {
 				if column.Type != "decimal" && column.Type != "numeric" {
 					value = strVal[:column.Length]
 				}
 			}
 
-			// Retry on UNIQUE violation.
 			if tracker.isUniqueColumn(column.Name) {
 				exhausted := true
 				for attempts := 0; attempts < maxUniqueRetries; attempts++ {
@@ -142,7 +147,7 @@ func generateTable(
 						exhausted = false
 						break
 					}
-					value, err = generator.Generate(&column, rowIndex+attempts+1, rng)
+					value, err = columnGen.Generate(&column, rowIndex+attempts+1, rng)
 					if err != nil {
 						return nil, &GenError{
 							Table:   tableName,
@@ -163,9 +168,6 @@ func generateTable(
 				tracker.record(column.Name, value)
 			}
 
-			// NOT NULL violation: if the value is nil and the column is NOT NULL,
-			// return an error — we must not fabricate values that silently break
-			// the documented Dataset invariant.
 			if value == nil && !column.Nullable {
 				return nil, &GenError{
 					Table:   tableName,
@@ -178,6 +180,7 @@ func generateTable(
 			row[column.Name] = value
 		}
 
+		tracker.recordRowConstraints(row, rowIndex)
 		generated.Rows = append(generated.Rows, row)
 	}
 
@@ -213,3 +216,25 @@ func buildAggregationFKSet(semGraph *semantic.SemanticGraph, tableName string) m
 // real-world optionality in nullable foreign key relationships.
 const aggFKNullProbability = 0.2
 
+// pickUniqueFKValue picks a FK value from the available pool, preferring values
+// that do not violate composite uniqueness constraints (e.g. UNIQUE(user_id, product_id)
+// or a composite primary key). Linear probing is used instead of extra RNG calls
+// to preserve determinism — the same seed always produces the same output regardless
+// of how many constraints are present.
+func pickUniqueFKValue(pkValues []any, row GeneratedRow, colName string, fkInfo FKRefInfo, rng *rand.Rand, tracker *uniqueTracker) any {
+	group, idx, isComposite := tracker.compositeGroupForColumn(colName)
+	if !isComposite || idx == 0 {
+		return pkValues[rng.IntN(len(pkValues))]
+	}
+
+	startIdx := rng.IntN(len(pkValues))
+	for offset := 0; offset < len(pkValues); offset++ {
+		candidate := pkValues[(startIdx+offset)%len(pkValues)]
+		row[colName] = candidate
+		key := serializeRowKey(row, group)
+		if !tracker.isCompositeKeySeen(key) {
+			return candidate
+		}
+	}
+	return pkValues[startIdx]
+}

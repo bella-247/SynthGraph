@@ -19,10 +19,9 @@ Closes #
 ## Checklist
 
 - [ ] Tests added or updated
-- [ ] `make test` passes (`go test ./... -race`)
-- [ ] `make lint` passes (`golangci-lint run ./...`)
+- [ ] `CGO_ENABLED=1 go test -count=1 ./...` passes
+- [ ] `go vet ./...` passes
 - [ ] No cross-stage imports (parser doesn't import generator, etc.)
 - [ ] No `time.Now()` or unseeded randomness in the generation pipeline
-- [ ] Error messages follow the format in SRS §12.2
+- [ ] Error messages are clear and include position context where possible
 - [ ] Exported functions have doc comments
-- [ ] Golden files updated if output format changed (`make test-golden UPDATE=true`)

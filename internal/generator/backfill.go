@@ -1,6 +1,7 @@
 package generator
 
 import (
+	"context"
 	"fmt"
 
 	"synthgraph/internal/planner"
@@ -36,7 +37,16 @@ func backfillDeferredFKs(
 
 		isSelfRef := dfk.Table == dfk.References
 
+		cancelCtx := ctx.Context
+		if cancelCtx == nil {
+			cancelCtx = context.Background()
+		}
 		for rowIndex := range table.Rows {
+			select {
+			case <-cancelCtx.Done():
+				return nil
+			default:
+			}
 			if table.Rows[rowIndex][dfk.Column] == nil {
 				if isSelfRef && rowIndex == 0 {
 					continue

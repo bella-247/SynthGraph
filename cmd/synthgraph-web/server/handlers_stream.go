@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"synthgraph/internal/exporter"
 	"synthgraph/internal/generator"
 	"synthgraph/internal/graph"
+	"synthgraph/internal/parser"
 	"synthgraph/internal/parser/postgresql"
 	"synthgraph/internal/planner"
 	"synthgraph/internal/semantic"
@@ -104,6 +106,10 @@ func (server *Server) handleGenerateStream(responseWriter http.ResponseWriter, r
 		stream.sendError("input (SQL) is required")
 		return
 	}
+	if len(rawSQL) > maxSchemaBodySize {
+		stream.sendError(fmt.Sprintf("schema too large (%d bytes, max %d)", len(rawSQL), maxSchemaBodySize))
+		return
+	}
 	if rowCount <= 0 {
 		rowCount = 10
 	}
@@ -144,7 +150,11 @@ func (server *Server) handleGenerateStream(responseWriter http.ResponseWriter, r
 
 	parsedModel, parseError := postgresql.New().Parse([]byte(rawSQL))
 	if parseError != nil {
-		stream.sendError(fmt.Sprintf("parse error: %v", parseError))
+		if pe := (*parser.ParseError)(nil); errors.As(parseError, &pe) {
+			stream.sendError(pe.Error())
+		} else {
+			stream.sendError(fmt.Sprintf("parse error: %v", parseError))
+		}
 		return
 	}
 	stream.sendEvent("stage", map[string]string{"stage": "parsing", "status": "done"})
@@ -232,8 +242,15 @@ func (server *Server) handleGenerateStream(responseWriter http.ResponseWriter, r
 	var exportedData []byte
 	pipeReader, pipeWriter := io.Pipe()
 	go func() {
+		defer pipeWriter.Close()
+		// If the request is cancelled, stop exporting and close the pipe.
+		select {
+		case <-requestContext.Done():
+			return
+		default:
+		}
 		exportConfig := &exporter.ExportConfig{
-			SchemaName:   schemaName,
+			SchemaName:    schemaName,
 			IncludeHeader: true,
 		}
 		var exportError error

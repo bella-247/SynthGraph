@@ -7,10 +7,10 @@ type parseRequest struct {
 }
 
 type parseResponse struct {
-	Tables   int            `json:"tables"`
-	Enums    int            `json:"enums"`
-	Model    *schema.Model  `json:"model"`
-	Warnings []string       `json:"warnings,omitempty"`
+	Tables   int           `json:"tables"`
+	Enums    int           `json:"enums"`
+	Model    *schema.Model `json:"model"`
+	Warnings []string      `json:"warnings,omitempty"`
 }
 
 type graphResponse struct {

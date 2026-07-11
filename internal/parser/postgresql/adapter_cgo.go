@@ -227,7 +227,8 @@ func convertConstraint(constraint *pg_query.Constraint) *TableConstraint {
 }
 
 // mapForeignKeyAction converts a pg_query FK action character to an FKAction.
-//   'a' = NO ACTION, 'r' = RESTRICT, 'c' = CASCADE, 'n' = SET NULL, 'd' = SET DEFAULT
+//
+//	'a' = NO ACTION, 'r' = RESTRICT, 'c' = CASCADE, 'n' = SET NULL, 'd' = SET DEFAULT
 func mapForeignKeyAction(actionCode string) FKAction {
 	if actionCode == "" {
 		return FKNoAction

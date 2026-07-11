@@ -225,8 +225,8 @@ func TestBuild_MultipleFKsBetweenSameTables(t *testing.T) {
 
 func TestBuild_ReverseReferenceEdges(t *testing.T) {
 	ordersTable := &schema.Table{
-		Name:    "orders",
-		Columns: []schema.Column{makeColumn("user_id", "int")},
+		Name:        "orders",
+		Columns:     []schema.Column{makeColumn("user_id", "int")},
 		ForeignKeys: []schema.ForeignKey{makeFK([]string{"user_id"}, "users", []string{"id"})},
 	}
 	usersTable := makeTable("users", makePKColumn("id", "int"))

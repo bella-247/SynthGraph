@@ -1,9 +1,9 @@
 package postgresql
 
 import (
-	"fmt"
 	"strings"
 
+	"synthgraph/internal/parser"
 	"synthgraph/internal/schema"
 )
 
@@ -43,16 +43,46 @@ func (p *PostgreSQLParser) Parse(source []byte) (*schema.Model, error) {
 	// Phase 1: parse SQL into our intermediate AST
 	stmts, err := parseSQL(text)
 	if err != nil {
-		return nil, fmt.Errorf("postgresql parse: %w", err)
+		return nil, wrapParseError(source, err)
 	}
 
 	// Phase 2: translate to canonical schema model
 	result, err := Translate(stmts)
 	if err != nil {
-		return nil, fmt.Errorf("postgresql translate: %w", err)
+		return nil, wrapParseError(source, err)
 	}
 
 	return result, nil
+}
+
+// wrapParseError wraps an error from the PostgreSQL parser pipeline into a
+// structured *parser.ParseError. For pg_query errors that mention a specific
+// token (e.g. 'syntax error at or near "INVALID"'), it searches the original
+// source to find the approximate line:col of the offending token.
+func wrapParseError(source []byte, err error) *parser.ParseError {
+	parseErr := &parser.ParseError{
+		Err:     err,
+		Message: err.Error(),
+	}
+
+	msg := err.Error()
+	const tokenPrefix = `at or near "`
+	if idx := strings.LastIndex(msg, tokenPrefix); idx >= 0 {
+		start := idx + len(tokenPrefix)
+		if end := strings.Index(msg[start:], `"`); end >= 0 {
+			token := msg[start : start+end]
+			if token != "" {
+				sourceStr := string(source)
+				if pos := strings.Index(sourceStr, token); pos >= 0 {
+					parseErr.Line = strings.Count(sourceStr[:pos], "\n") + 1
+					lastNewline := strings.LastIndex(sourceStr[:pos], "\n")
+					parseErr.Col = pos - lastNewline
+				}
+			}
+		}
+	}
+
+	return parseErr
 }
 
 // Preprocess splits SQL text into individual statements and removes comments.

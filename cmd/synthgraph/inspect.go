@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"synthgraph/internal/graph"
+	"synthgraph/internal/parser"
 	"synthgraph/internal/schema"
 	"synthgraph/internal/semantic"
 )
@@ -41,7 +42,11 @@ func runInspect(args []string) {
 	globalLogger.Debug("inspecting schema: %s", config.input)
 	model, err := parseSQLFile(config.input)
 	if err != nil {
-		globalLogger.Error("parsing schema: %v", err)
+		if pe := (*parser.ParseError)(nil); errors.As(err, &pe) {
+			globalLogger.Error("parsing schema: %s", pe.Error())
+		} else {
+			globalLogger.Error("parsing schema: %v", err)
+		}
 		os.Exit(1)
 	}
 
