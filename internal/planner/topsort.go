@@ -14,7 +14,9 @@ import "synthgraph/internal/graph"
 //   - unresolved: table node IDs that never reached count 0 (cycles + blocked)
 func topologicalSort(schemaGraph *graph.Graph, tableNodes map[string]*graph.Node) ([]string, []string) {
 	var ordered, unresolved []string
+
 	outCount := make(map[string]int, len(tableNodes))
+	reverseAdj := make(map[string][]string, len(tableNodes))
 	for nodeID := range tableNodes {
 		outCount[nodeID] = 0
 	}
@@ -22,6 +24,7 @@ func topologicalSort(schemaGraph *graph.Graph, tableNodes map[string]*graph.Node
 		if edge.Kind == graph.EdgeKindReferences {
 			if _, isTable := tableNodes[edge.From]; isTable {
 				outCount[edge.From]++
+				reverseAdj[edge.To] = append(reverseAdj[edge.To], edge.From)
 			}
 		}
 	}
@@ -38,14 +41,7 @@ func topologicalSort(schemaGraph *graph.Graph, tableNodes map[string]*graph.Node
 		queue = queue[1:]
 		ordered = append(ordered, current)
 
-		for _, edge := range schemaGraph.Edges {
-			if edge.Kind != graph.EdgeKindReferences {
-				continue
-			}
-			if edge.To != current {
-				continue
-			}
-			dependentID := edge.From
+		for _, dependentID := range reverseAdj[current] {
 			if _, isTable := tableNodes[dependentID]; !isTable {
 				continue
 			}
@@ -57,16 +53,11 @@ func topologicalSort(schemaGraph *graph.Graph, tableNodes map[string]*graph.Node
 	}
 
 	// Collect any node still with count > 0.
-	for _, edge := range schemaGraph.Edges {
-		if edge.Kind == graph.EdgeKindReferences {
-			if _, isTable := tableNodes[edge.From]; isTable {
-				if outCount[edge.From] > 0 {
-					unresolved = append(unresolved, edge.From)
-				}
-			}
+	for nodeID, count := range outCount {
+		if count > 0 {
+			unresolved = append(unresolved, nodeID)
 		}
 	}
 
-	unresolved = dedupeStrings(unresolved)
 	return ordered, unresolved
 }

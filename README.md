@@ -1,192 +1,213 @@
 # SynthGraph
 
-**Turn your SQL schema into realistic test data — automatically.**
-
-SynthGraph reads your database schema, figures out how tables relate to each other, and generates sample data that respects every rule: foreign keys match up, emails are unique, enum values are valid, and nothing breaks.
+**Paste your SQL schema — get realistic test data. Foreign keys match, emails are unique, nothing breaks.**
 
 ```sql
--- Given this schema
+-- You write this (your database schema)
 CREATE TABLE users   (id INT PRIMARY KEY, email VARCHAR(255) UNIQUE);
 CREATE TABLE orders  (id INT PRIMARY KEY, user_id INT REFERENCES users(id));
 
--- SynthGraph generates data where every order.user_id
--- actually exists in users.id — guaranteed.
+-- SynthGraph generates this (realistic test data)
+INSERT INTO users  VALUES (1, 'alice@example.com'), (2, 'bob@example.com');
+INSERT INTO orders VALUES (1, 1, 'pending'),        (2, 2, 'shipped');
+-- Every order.user_id matches a real user. Every email is unique. It just works.
 ```
 
 No manual seed files. No foreign key violations. No frustration.
 
 ---
 
-## Two ways to use it
+## Quick Install
 
-### 1. Web app (easiest — recommended for beginners)
-
-A full visual tool that takes you from schema to download in 5 steps.
+### Linux / macOS (one line)
 
 ```bash
-# macOS / Linux (bash/zsh):
-CGO_ENABLED=1 go run ./cmd/synthgraph-web/
-
-# Windows (PowerShell):
-$env:CGO_ENABLED='1'; go run ./cmd/synthgraph-web/
+curl -sSf https://raw.githubusercontent.com/bella-247/SynthGraph/main/scripts/install.sh | sh
 ```
 
-> **Why `CGO_ENABLED=1`?** SynthGraph embeds PostgreSQL's own C parser (`pg_query_go`) to read SQL reliably. CGO bridges Go and C — it's required.
+### Windows (one line)
 
-Open **http://localhost:8080** and follow the pipeline:
+```powershell
+irm https://raw.githubusercontent.com/bella-247/SynthGraph/main/scripts/install.ps1 | iex
+```
 
-| Step | What happens |
-|------|-------------|
-| **Schema** | Paste your SQL or pick a template to start |
-| **Graph** | See your schema as an interactive node diagram |
-| **Generate** | Set row count and format, click Generate |
-| **Download** | Get your seed file as SQL or CSV |
-| **History** | Browse and re-download past jobs |
-
-> **Tip:** Don't have a schema handy? Pick the "E-Commerce" template to see how it works.
-
-### 2. CLI (for scripts, CI, and power users)
-
-Same engine, but from the terminal. Perfect for automation.
+### Go users (build from source)
 
 ```bash
-synthgraph generate --input schema.sql --rows 100 --output seed.sql
+CGO_ENABLED=1 go install github.com/bella-247/SynthGraph/cmd/synthgraph@latest
 ```
 
-See the [CLI Reference](docs/cli_reference.md) for all commands and flags.
+> **What is CGO?** SynthGraph uses the real PostgreSQL parser to read SQL schemas. That parser is written in C, so Go needs CGO to talk to it. On Windows, you'll need [MinGW-w64](https://www.msys2.org/) (GCC for Windows). On macOS, run `xcode-select --install`. On Linux, `sudo apt install gcc libpq-dev`.
 
 ---
 
-## What makes SynthGraph different?
+## 2-Minute Walkthrough
 
-Other generators create values in isolation — they don't know that `orders.user_id` must match a real user. SynthGraph treats your schema as a **dependency graph**:
+### 1. Create a schema file
 
-1. **Reads your schema** — understands tables, columns, and every constraint
-2. **Builds a dependency map** — figures out which tables need to exist before others
-3. **Generates in the right order** — parents before children, referenced before referencing
-4. **Resolves circular dependencies** — handles tricky cases like `users → organizations → users` automatically
+Save this as `shop.sql`:
 
-The result: data that **just works**, every time.
-
-### Constraint support
-
-| Constraint | Handled? |
-|-----------|----------|
-| Primary keys (single + composite) | ✅ |
-| Foreign keys (single + composite) | ✅ |
-| Unique constraints | ✅ |
-| NOT NULL | ✅ |
-| Enum values | ✅ |
-| VARCHAR / DECIMAL length | ✅ |
-| Circular FK dependencies | ✅ |
-
----
-
-## Quick start: Web app
-
-```bash
-# 1. Make sure Go is installed (1.21+)
-go version
-
-# 2. Clone and start the web app
-git clone https://github.com/bella-247/SynthGraph.git
-cd SynthGraph
-
-# macOS/Linux:
-CGO_ENABLED=1 go run ./cmd/synthgraph-web/
-# Windows PowerShell:
-# $env:CGO_ENABLED='1'; go run ./cmd/synthgraph-web/
-
-# 3. Open http://localhost:8080
-```
-
-Then:
-1. On the **Schema** page, pick a template or paste your SQL
-2. Click "Parse Schema" — the app analyzes your tables
-3. Go to **Graph** to see relationships visually
-4. Go to **Generate**, set rows (try 10), click Generate
-5. Download your seed file
-
----
-
-## Quick start: CLI
-
-```bash
-# Build the CLI (macOS/Linux):
-CGO_ENABLED=1 go build -o synthgraph.exe ./cmd/synthgraph/
-# Windows PowerShell:
-# $env:CGO_ENABLED='1'; go build -o synthgraph.exe ./cmd/synthgraph/
-
-# Generate 50 rows per table
-./synthgraph.exe generate --input testdata/schemas/ecommerce.sql --rows 50
-
-# Output to a file
-./synthgraph.exe generate --input testdata/schemas/ecommerce.sql --rows 50 --output seed.sql
-
-# See what your schema looks like
-./synthgraph.exe inspect --input testdata/schemas/ecommerce.sql --graph --semantic
-```
-
----
-
-## Example walkthrough
-
-**Input** (`ecommerce.sql`):
 ```sql
 CREATE TABLE users (
-    id         SERIAL PRIMARY KEY,
+    id         INT PRIMARY KEY,
+    name       VARCHAR(100) NOT NULL,
     email      VARCHAR(255) UNIQUE NOT NULL,
-    first_name VARCHAR(100) NOT NULL,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE TABLE products (
-    id    SERIAL PRIMARY KEY,
+    id    INT PRIMARY KEY,
     name  VARCHAR(255) NOT NULL,
     price DECIMAL(10,2) NOT NULL
 );
 
 CREATE TABLE orders (
-    id      SERIAL PRIMARY KEY,
+    id      INT PRIMARY KEY,
     user_id INT NOT NULL REFERENCES users(id),
-    total   DECIMAL(10,2) NOT NULL,
+    product_id INT NOT NULL REFERENCES products(id),
     status  VARCHAR(50) DEFAULT 'pending'
 );
 ```
 
-**Output** (`seed.sql`):
-```sql
-BEGIN;
-INSERT INTO users (id, email, first_name, created_at) VALUES
-  (1, 'alice@example.com', 'Alice', '2024-03-15 09:22:11'), ...
-INSERT INTO products (id, name, price) VALUES
-  (1, 'Wireless Headphones', 89.99), ...
-INSERT INTO orders (id, user_id, total, status) VALUES
-  (1, 23, 142.50, 'pending'), ...
-COMMIT;
+### 2. Generate data
+
+```bash
+synthgraph generate -i shop.sql -o seed.sql
 ```
 
-Every FK value exists. Every email is unique. The file runs clean, first try.
+### 3. Load into your database
+
+```bash
+psql -d mydb -f seed.sql
+```
+
+That's it. You now have 10 users, 10 products, and 10 orders — all with valid foreign keys.
+
+### Try different options
+
+```bash
+synthgraph generate -i shop.sql -r 100     # 100 rows per table
+synthgraph generate -i shop.sql -f csv      # CSV instead of SQL
+synthgraph generate -i shop.sql -s 12345    # fixed seed (repeatable output)
+```
 
 ---
 
-## Architecture in one sentence
+## Web App (graphical interface)
 
-```
-SQL → Parser → Graph → Planner → Generator → Validator → SQL/CSV
+SynthGraph also ships with a browser UI that shows your schema as an interactive diagram:
+
+```bash
+synthgraph-web
+# → Open http://localhost:8080
 ```
 
-Each stage is a pure function that produces one artifact and feeds it to the next. Full details in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The web app walks you through 4 steps:
+
+| Step | What you do | What you see |
+|------|------------|--------------|
+| **Schema** | Paste SQL or pick a template | Parsed tables, columns, types |
+| **Graph** | Look at the diagram | Tables as boxes, FK relationships as arrows |
+| **Generate** | Set row count, click Generate | Live progress as data is created |
+| **History** | Browse past jobs | Download any result again |
+
+---
+
+## Commands
+
+### `synthgraph generate`
+
+Generate synthetic data from a SQL schema.
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--input` | `-i` | — | Path to your `.sql` schema file (required) |
+| `--output` | `-o` | stdout | File to write to (omit to print to terminal) |
+| `--rows` | `-r` | `10` | Rows per table (max: 100,000) |
+| `--format` | `-f` | `sql` | Output format: `sql` or `csv` |
+| `--seed` | `-s` | `42` | Random seed — same seed = same data every time |
+| `--verbose` | `-v` | — | Show detailed progress |
+| `--schema-name` | — | `""` | Schema name for SQL output (e.g., `public`) |
+| `--config` | `-c` | — | Path to YAML config file |
+| `--init-config` | — | — | Write a default YAML config file and exit |
+
+**Examples:**
+
+```bash
+synthgraph generate -i schema.sql                          # 10 rows, SQL output, to terminal
+synthgraph generate -i schema.sql -o data.sql              # save to file
+synthgraph generate -i schema.sql -r 1000 -f csv -o data.csv  # 1000 rows, CSV
+```
+
+### `synthgraph inspect`
+
+Analyze a schema and print its structure.
+
+```bash
+synthgraph inspect -i schema.sql                           # tables, columns, enums
+synthgraph inspect -i schema.sql -v                        # + graph + semantic details
+```
+
+### `synthgraph version`
+
+```bash
+synthgraph version
+# → synthgraph version 1.0.0
+```
+
+---
+
+## What makes SynthGraph different?
+
+Other generators create random values in isolation — they don't know that `orders.user_id` must match a real user. SynthGraph reads your **entire schema**, builds a dependency graph, and generates in the right order:
+
+```sql
+CREATE TABLE users   (id INT PRIMARY KEY);
+CREATE TABLE orders  (id INT PRIMARY KEY, user_id INT REFERENCES users(id));
+
+-- Other generators:
+-- orders.user_id might be 9999 — no user with that ID. Violation. ❌
+
+-- SynthGraph:
+-- Generates users FIRST, then orders referencing those users. Guaranteed valid. ✅
+```
+
+### Supported constraints
+
+| Constraint | Supported? |
+|-----------|:----------:|
+| Primary keys (single + composite) | ✅ |
+| Foreign keys (single + composite) | ✅ |
+| Unique constraints | ✅ |
+| NOT NULL | ✅ |
+| Enum types (`CREATE TYPE ... AS ENUM`) | ✅ |
+| VARCHAR / DECIMAL length | ✅ |
+| Circular FK dependencies (e.g. A → B → A) | ✅ |
+| `DEFAULT` expressions | ✅ |
 
 ---
 
 ## Development
 
-See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for building, testing, and extending.
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for building from source, running tests, and extending SynthGraph.
 
-## Contributing
+```bash
+# Quick test (no CGO needed — skips parser tests)
+make test-quick          # Linux/macOS
+.\dev.ps1 test quick     # Windows
 
-Contributions welcome — see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md). Good first issues: new semantic field generators, test coverage, better error messages.
+# Full test suite (requires CGO)
+make test                # Linux/macOS
+.\dev.ps1 test all       # Windows
+```
+
+## Architecture
+
+```
+SQL → Parser → Graph → Planner → Generator → Validator → SQL / CSV
+```
+
+Each stage is a pure function. Details in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## License
 

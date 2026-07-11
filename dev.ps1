@@ -4,14 +4,14 @@
   Dev helper for SynthGraph — build, test, lint, run, clean, CI.
 
 .EXAMPLE
-  .\dev.ps1 build              # build all 3 binaries into bin/
+  .\dev.ps1 build              # build all binaries into bin/
   .\dev.ps1 test               # unit tests (no CGO)
   .\dev.ps1 test all           # full test suite (CGO required)
   .\dev.ps1 test coverage      # with coverage report
   .\dev.ps1 lint               # go vet + gofmt
-  .\dev.ps1 run web            # start web server (port 9090)
+  .\dev.ps1 run web            # start web server (port 8080)
   .\dev.ps1 run web 9090       # custom port
-  .\dev.ps1 run cli            # CLI on sakila schema
+  .\dev.ps1 run cli            # CLI on ecommerce test schema
   .\dev.ps1 clean              # remove build artifacts
   .\dev.ps1 ci                 # full pipeline: vet > build > test
 #>
@@ -34,8 +34,6 @@ function Build {
   go build -o (Join-Path $BIN 'synthgraph.exe')   (Join-Path $ROOT 'cmd/synthgraph/')
   Write-Host "=== Building synthgraph-web ===" -ForegroundColor Cyan
   go build -o (Join-Path $BIN 'synthgraph-web.exe') (Join-Path $ROOT 'cmd/synthgraph-web/')
-  Write-Host "=== Building serveviz ===" -ForegroundColor Cyan
-  go build -o (Join-Path $BIN 'serveviz.exe')     (Join-Path $ROOT 'cmd/serveviz/')
   Write-Host "`nDone — binaries in $BIN" -ForegroundColor Green
   Get-ChildItem $BIN | Select-Object Name, Length
 }
@@ -102,12 +100,12 @@ function Run {
   $sub = if ($ArgsList.Count -gt 0) { $ArgsList[0] } else { 'web' }
   switch ($sub) {
     'web' {
-      $port = if ($ArgsList.Count -gt 1) { $ArgsList[1] } else { '9090' }
+      $port = if ($ArgsList.Count -gt 1) { $ArgsList[1] } else { '8080' }
       Write-Host "==> Starting synthgraph-web on port $port" -ForegroundColor Green
       & (Join-Path $BIN 'synthgraph-web.exe') --port $port
     }
     'cli' {
-      $schema = if ($ArgsList.Count -gt 1) { $ArgsList[1] } else { Join-Path $ROOT 'testdata/schemas/sakila.sql' }
+      $schema = if ($ArgsList.Count -gt 1) { $ArgsList[1] } else { Join-Path $ROOT 'testdata/schemas/ecommerce.sql' }
       Write-Host "==> Running CLI with schema: $schema" -ForegroundColor Green
       & (Join-Path $BIN 'synthgraph.exe') generate --input $schema --rows 50 --output /dev/stdout
     }

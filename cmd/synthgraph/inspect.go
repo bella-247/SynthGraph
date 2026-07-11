@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"synthgraph/internal/graph"
+	"synthgraph/internal/parser"
 	"synthgraph/internal/schema"
 	"synthgraph/internal/semantic"
 )
@@ -41,7 +42,11 @@ func runInspect(args []string) {
 	globalLogger.Debug("inspecting schema: %s", config.input)
 	model, err := parseSQLFile(config.input)
 	if err != nil {
-		globalLogger.Error("parsing schema: %v", err)
+		if pe := (*parser.ParseError)(nil); errors.As(err, &pe) {
+			globalLogger.Error("parsing schema: %s", pe.Error())
+		} else {
+			globalLogger.Error("parsing schema: %v", err)
+		}
 		os.Exit(1)
 	}
 
@@ -203,7 +208,9 @@ func printSemanticSummary(sg *semantic.SemanticGraph) {
 	fmt.Println("Semantic Summary")
 	fmt.Println("================")
 
-	for id, node := range sg.Nodes {
+	for _, semNode := range sg.NodeList {
+		id := semNode.ID
+		node := semNode
 		if len(node.Roles) == 0 && node.Temporal == nil && node.Audit == nil && len(node.Inferences) == 0 {
 			continue
 		}

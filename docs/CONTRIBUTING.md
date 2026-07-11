@@ -12,16 +12,15 @@ This document explains how to contribute effectively.
 
 ## Before You Start
 
-Read the [Architecture document](architecture.md) before making any significant contribution. SynthGraph has strict pipeline boundaries and architectural rules. Understanding them upfront will save you from rework.
+Read the [Architecture document](ARCHITECTURE.md) before making any significant contribution. SynthGraph has strict pipeline boundaries and architectural rules. Understanding them upfront will save you from rework.
 
 ---
 
 ## Development Setup
 
 **Requirements:**
-- Go 1.21 or higher
-- `golangci-lint` (for linting)
-- PostgreSQL development headers (required for pg_query_go compilation)
+- Go 1.26 or higher
+- GCC / MinGW-w64 (required by CGO for pg_query_go compilation)
 
 **Setup:**
 
@@ -71,7 +70,7 @@ These rules exist to keep the codebase maintainable, readable, and approachable 
 
 ## Code Style
 
-- Run `golangci-lint run ./...` before submitting. Zero warnings expected.
+- Run `go vet ./... && gofmt -d .` before submitting. Zero warnings expected.
 - Follow standard Go conventions (`gofmt`, `goimports`).
 - Every exported function must have a doc comment.
 
@@ -100,7 +99,7 @@ Every PR must include tests. No exceptions.
 Run tests before pushing:
 
 ```bash
-go test ./... -v -count=1
+CGO_ENABLED=1 go test ./... -v -count=1
 ```
 
 ---
@@ -156,7 +155,7 @@ feat(generator): add credit_card semantic generator
 fix(parser): handle quoted table names in CREATE TABLE
 test(graph): add three-node cycle detection test
 docs: update CLI reference for --tables flag
-chore: bump golangci-lint to 1.55
+chore: update go version to 1.26
 ```
 
 ---

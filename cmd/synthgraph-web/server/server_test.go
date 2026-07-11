@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -196,6 +198,19 @@ func TestPanicRecovery(t *testing.T) {
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Errorf("expected status %d, got %d", http.StatusBadRequest, recorder.Code)
+	}
+}
+
+func TestGenerateEndpointReturns400ForParseError(t *testing.T) {
+	testServer := newTestServer()
+	body := `{"input": "CREATE INVALID", "rows": 10}`
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/generate", bytes.NewReader([]byte(body)))
+	request.Header.Set("Content-Type", "application/json")
+	testServer.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Errorf("expected status %d for parse error, got %d: %s", http.StatusBadRequest, recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -483,6 +498,9 @@ func TestSecurityHeaders(t *testing.T) {
 	if recorder.Header().Get("Referrer-Policy") != "strict-origin-when-cross-origin" {
 		t.Error("expected Referrer-Policy: strict-origin-when-cross-origin")
 	}
+	if recorder.Header().Get("Content-Security-Policy") == "" {
+		t.Error("expected Content-Security-Policy header")
+	}
 }
 
 func TestRequestIDHeader(t *testing.T) {
@@ -598,5 +616,55 @@ func TestRateLimiterAllow(t *testing.T) {
 	// Different client should be allowed
 	if !limiter.allow("other-client") {
 		t.Error("expected different client to be allowed")
+	}
+}
+
+func TestJobStorePersistenceRoundTrip(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "jobs.json")
+	jobStore := NewJobStoreWithPersistence(tmpFile)
+
+	jobStore.Add(&Job{
+		Status: "completed",
+		Tables: 3,
+		Format: "csv",
+		Data:   []byte("a,b,c\n1,2,3"),
+	})
+
+	job := jobStore.GetByID(1)
+	if job == nil || len(job.Data) == 0 {
+		t.Fatal("expected job with data in memory")
+	}
+
+	jobStore2 := NewJobStoreWithPersistence(tmpFile)
+	job2 := jobStore2.GetByID(1)
+	if job2 == nil {
+		t.Fatal("expected job after reload")
+	}
+	if string(job2.Data) != "a,b,c\n1,2,3" {
+		t.Errorf("expected data to survive persistence, got %q", string(job2.Data))
+	}
+}
+
+func TestJobStoreDataPersistedToDisk(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "jobs.json")
+	jobStore := NewJobStoreWithPersistence(tmpFile)
+	jobStore.Add(&Job{
+		Status: "completed",
+		Tables: 3,
+		Data:   []byte("test data"),
+	})
+	content, err := os.ReadFile(tmpFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded []*Job
+	if err := json.Unmarshal(content, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal persisted file: %v", err)
+	}
+	if len(decoded) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(decoded))
+	}
+	if string(decoded[0].Data) != "test data" {
+		t.Errorf("expected 'test data', got %q", string(decoded[0].Data))
 	}
 }

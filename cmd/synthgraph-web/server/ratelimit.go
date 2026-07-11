@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -72,6 +73,13 @@ var globalRateLimiter = newRateLimiter(60, 1*time.Minute)
 func rateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(responseWriter http.ResponseWriter, request *http.Request) {
 		visitorKey := request.RemoteAddr
+		if forwarded := request.Header.Get("X-Forwarded-For"); forwarded != "" {
+			if idx := strings.Index(forwarded, ","); idx >= 0 {
+				visitorKey = strings.TrimSpace(forwarded[:idx])
+			} else {
+				visitorKey = strings.TrimSpace(forwarded)
+			}
+		}
 		if !globalRateLimiter.allow(visitorKey) {
 			responseWriter.Header().Set("Retry-After", "60")
 			writeError(responseWriter, http.StatusTooManyRequests, "rate limit exceeded, try again later")

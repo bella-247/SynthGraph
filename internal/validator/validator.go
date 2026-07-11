@@ -110,8 +110,8 @@ func Validate(dataset *generator.Dataset, model *schema.Model) []ValidationError
 		schemaTable := model.TableMap[table.TableName]
 		if schemaTable == nil {
 			errs = append(errs, ValidationError{
-				Table: table.TableName,
-				Rule:  "INTERNAL",
+				Table:   table.TableName,
+				Rule:    "INTERNAL",
 				Message: fmt.Sprintf("table %q not found in schema model", table.TableName),
 			})
 			continue
@@ -331,15 +331,29 @@ func checkFKRefs(table *generator.GeneratedTable, schemaTable *schema.Table, ref
 		targetKey := fk.RefTable + "." + strings.Join(fk.RefColumns, ",")
 		pkSet, ok := refPKs[targetKey]
 		if !ok {
-			// Referenced table might not have been generated.
 			continue
 		}
 
 		for rowIdx, row := range table.Rows {
+			// Composite FK: serialize all FK columns together and check as one key.
+			if len(fk.Columns) > 1 {
+				key := serializeFKGroup(row, fk.Columns)
+				if !pkSet[key] {
+					errs = append(errs, ValidationError{
+						Table:    table.TableName,
+						RowIndex: rowIdx,
+						Rule:     "FK",
+						Value:    key,
+						Message:  fmt.Sprintf("foreign key composite value %q not found in referenced table %q PK values", key, fk.RefTable),
+					})
+				}
+				continue
+			}
+			// Single FK column: check each nullable column individually.
 			for _, fkCol := range fk.Columns {
 				val, ok := row[fkCol]
 				if !ok || val == nil {
-					continue // NULL FK values are allowed (nullable FK)
+					continue
 				}
 				serialized := fmt.Sprintf("%v", val)
 				if !pkSet[serialized] {
@@ -356,6 +370,16 @@ func checkFKRefs(table *generator.GeneratedTable, schemaTable *schema.Table, ref
 		}
 	}
 	return errs
+}
+
+// serializeFKGroup produces a string key for a group of FK columns, matching
+// the serialization format used for composite primary keys.
+func serializeFKGroup(row generator.GeneratedRow, cols []string) string {
+	parts := make([]string, len(cols))
+	for i, col := range cols {
+		parts[i] = fmt.Sprintf("%v", row[col])
+	}
+	return strings.Join(parts, "::")
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

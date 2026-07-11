@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"fmt"
 	"testing"
 
 	"synthgraph/internal/graph"
@@ -230,5 +231,26 @@ func TestBuildPlan_ForkedDependencies(t *testing.T) {
 	}
 	if indexOf["a"] > indexOf["c"] {
 		t.Errorf("expected a before c, got a=%d c=%d", indexOf["a"], indexOf["c"])
+	}
+}
+
+func BenchmarkTopologicalSort(b *testing.B) {
+	g := &graph.Graph{Nodes: make(map[string]*graph.Node)}
+	tableNodes := make(map[string]*graph.Node)
+	for i := 0; i < 100; i++ {
+		id := fmt.Sprintf("table:t%d", i)
+		n := &graph.Node{ID: id, Kind: graph.NodeKindTable}
+		g.Nodes[id] = n
+		g.NodeList = append(g.NodeList, n)
+		tableNodes[id] = n
+		if i > 0 {
+			g.Edges = append(g.Edges, &graph.Edge{
+				From: id, To: fmt.Sprintf("table:t%d", i-1), Kind: graph.EdgeKindReferences,
+			})
+		}
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		topologicalSort(g, tableNodes)
 	}
 }

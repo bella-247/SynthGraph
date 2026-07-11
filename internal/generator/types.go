@@ -23,13 +23,13 @@ var builtInGenerators = map[string]TypeGenerator{
 	"bigint":   intGenerator{min: 1, max: 9223372036854775807},
 	"smallint": intGenerator{min: 1, max: 32767},
 
-	"serial":       serialGenerator{start: 1},
-	"bigserial":    serialGenerator{start: 1},
-	"smallserial":  serialGenerator{start: 1},
+	"serial":      serialGenerator{start: 1},
+	"bigserial":   serialGenerator{start: 1},
+	"smallserial": serialGenerator{start: 1},
 
-	"varchar":  stringGenerator{},
-	"text":     stringGenerator{},
-	"char":     stringGenerator{},
+	"varchar": stringGenerator{},
+	"text":    stringGenerator{},
+	"char":    stringGenerator{},
 
 	"uuid": uuidGenerator{},
 
@@ -41,12 +41,12 @@ var builtInGenerators = map[string]TypeGenerator{
 
 	"boolean": boolGenerator{},
 
-	"decimal": decimalGenerator{},
-	"numeric": decimalGenerator{},
-	"float4":  floatGenerator{},
-	"float8":  floatGenerator{},
-	"real":    floatGenerator{},
-	"double":  floatGenerator{},
+	"decimal":          decimalGenerator{},
+	"numeric":          decimalGenerator{},
+	"float4":           floatGenerator{},
+	"float8":           floatGenerator{},
+	"real":             floatGenerator{},
+	"double":           floatGenerator{},
 	"double precision": floatGenerator{},
 
 	"json":  jsonGenerator{},

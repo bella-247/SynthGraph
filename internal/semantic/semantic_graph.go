@@ -104,6 +104,6 @@ func newSemanticGraph(sourceGraph *graph.Graph) *SemanticGraph {
 		Nodes:         make(map[string]*SemanticNode, len(sourceGraph.Nodes)),
 		NodeList:      make([]*SemanticNode, 0, len(sourceGraph.NodeList)),
 		Relationships: make([]*SemanticRelationship, 0),
-		Source:   sourceGraph,
+		Source:        sourceGraph,
 	}
 }

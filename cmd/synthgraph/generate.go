@@ -13,6 +13,7 @@ import (
 	"synthgraph/internal/exporter"
 	"synthgraph/internal/generator"
 	"synthgraph/internal/graph"
+	"synthgraph/internal/parser"
 	"synthgraph/internal/planner"
 	"synthgraph/internal/schema"
 	"synthgraph/internal/semantic"
@@ -53,7 +54,11 @@ func runGenerate(args []string) {
 
 	model, parseErr := parseSQLFile(config.input)
 	if parseErr != nil {
-		globalLogger.Error("parsing schema: %v", parseErr)
+		if pe := (*parser.ParseError)(nil); errors.As(parseErr, &pe) {
+			globalLogger.Error("parsing schema: %s", pe.Error())
+		} else {
+			globalLogger.Error("parsing schema: %v", parseErr)
+		}
 		os.Exit(1)
 	}
 
@@ -65,7 +70,11 @@ func runGenerate(args []string) {
 		os.Exit(1)
 	}
 
-	dataset, genErr := generateData(ctx, model, config)
+	progress := func(tableName string, current int, total int) {
+		globalLogger.Info("generating %s... (%d/%d)", tableName, current, total)
+	}
+
+	dataset, genErr := generateData(ctx, model, config, progress)
 	if genErr != nil {
 		if errors.Is(genErr, generator.ErrCancelled) {
 			globalLogger.Error("generation cancelled — exporting partial data (%d tables)", len(dataset.Tables))
@@ -178,6 +187,11 @@ func parseGenerateFlags(args []string) (*generateConfig, error) {
 	return config, nil
 }
 
+const (
+	maxRows       = 100_000
+	maxSchemaSize = 10 << 20 // 10 MB
+)
+
 func (c *generateConfig) validate() error {
 	if c.input == "" {
 		return fmt.Errorf("--input is required")
@@ -185,16 +199,25 @@ func (c *generateConfig) validate() error {
 	if c.rows < 0 {
 		return fmt.Errorf("--rows must be non-negative")
 	}
+	if c.rows > maxRows {
+		return fmt.Errorf("--rows exceeds maximum (%d)", maxRows)
+	}
+	fi, err := os.Stat(c.input)
+	if err != nil {
+		return fmt.Errorf("reading input file: %w", err)
+	}
+	if fi.Size() > maxSchemaSize {
+		return fmt.Errorf("schema file too large (%d bytes, max %d)", fi.Size(), maxSchemaSize)
+	}
 	switch c.format {
 	case "sql", "csv":
-		// valid
 	default:
 		return fmt.Errorf("unsupported format %q: use sql or csv", c.format)
 	}
 	return nil
 }
 
-func generateData(ctx context.Context, model *schema.Model, config *generateConfig) (*generator.Dataset, error) {
+func generateData(ctx context.Context, model *schema.Model, config *generateConfig, progress generator.ProgressCallback) (*generator.Dataset, error) {
 	g, err := graph.Build(model)
 	if err != nil {
 		return nil, fmt.Errorf("building graph: %w", err)
@@ -218,6 +241,7 @@ func generateData(ctx context.Context, model *schema.Model, config *generateConf
 		Model:         model,
 		Graph:         g,
 		SemanticGraph: sg,
+		Progress:      progress,
 	}
 
 	dataset, err := generator.Generate(plan, genCtx)
@@ -249,7 +273,7 @@ func exportData(config *generateConfig, dataset *generator.Dataset, model *schem
 		return exporter.ExportSQL(writer, dataset, model, exportCfg)
 	case "csv":
 		exportCfg := &exporter.ExportConfig{
-			SchemaName:   config.schemaName,
+			SchemaName:    config.schemaName,
 			IncludeHeader: true,
 		}
 		return exporter.ExportCSV(writer, dataset, model, exportCfg)

@@ -14,7 +14,7 @@ type Job struct {
 	Config  generationRequest `json:"config"`
 	Tables  int               `json:"tables"`
 	Errors  []string          `json:"errors,omitempty"`
-	Data    []byte            `json:"-"`
+	Data    []byte            `json:"data,omitempty"`
 	Format  string            `json:"format"`
 }
 
@@ -40,9 +40,9 @@ type jobDetail struct {
 }
 
 type JobStore struct {
-	mu         sync.Mutex
-	jobs       []*Job
-	nextID     int
+	mu          sync.Mutex
+	jobs        []*Job
+	nextID      int
 	persistPath string
 }
 
@@ -121,12 +121,19 @@ func (jobStore *JobStore) Delete(id int) bool {
 }
 
 func (jobStore *JobStore) rewriteDisk() {
-	file, openError := os.Create(jobStore.persistPath)
+	tmpPath := jobStore.persistPath + ".tmp"
+	file, openError := os.Create(tmpPath)
 	if openError != nil {
 		return
 	}
-	defer file.Close()
-	json.NewEncoder(file).Encode(jobStore.jobs)
+	encodeError := json.NewEncoder(file).Encode(jobStore.jobs)
+	file.Close()
+	if encodeError != nil {
+		os.Remove(tmpPath)
+		return
+	}
+	os.Remove(jobStore.persistPath)
+	os.Rename(tmpPath, jobStore.persistPath)
 }
 
 func reverseSlice[T any](slice []T) {
@@ -151,4 +158,3 @@ func (jobStore *JobStore) loadFromDisk() {
 		}
 	}
 }
-

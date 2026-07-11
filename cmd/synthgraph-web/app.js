@@ -724,7 +724,15 @@ function runGeneration() {
   });
   var es = new EventSource('/api/generate/stream?' + params.toString());
   var lastStage = '';
-  var stages = ['Parsing', 'Analyzing', 'Generating', 'Exporting'];
+  var stages = ['parsing', 'analyzing', 'generating', 'exporting'];
+  var stageToStep = {
+    parsing: 'parsing',
+    graphing: 'analyzing',
+    semantic: 'analyzing',
+    planning: 'analyzing',
+    generating: 'generating',
+    exporting: 'exporting'
+  };
 
   pipelineEl.style.display = 'flex';
   pipelineEl.innerHTML = stages.map(function(s) {
@@ -736,23 +744,23 @@ function runGeneration() {
   es.addEventListener('stage', function(e) {
     var data = JSON.parse(e.data);
     lastStage = data.stage;
-    var stageKey = data.stage.toLowerCase();
+    var stepKey = stageToStep[data.stage] || data.stage.toLowerCase();
     if (data.status === 'processing') {
-      stageEl.textContent = data.stage.charAt(0).toUpperCase() + data.stage.slice(1) + '...';
+      stageEl.textContent = stepKey.charAt(0).toUpperCase() + stepKey.slice(1) + '...';
       pipelineEl.querySelectorAll('.pipeline-step').forEach(function(s) {
         var stepStage = s.getAttribute('data-stage');
-        if (stepStage === stageKey) {
+        if (stepStage === stepKey) {
           s.className = 'pipeline-step active';
           s.querySelector('.step-icon').textContent = '\u25CF';
-        } else if (stages.indexOf(stageKey) > stages.indexOf(stepStage)) {
+        } else if (stages.indexOf(stepKey) > stages.indexOf(stepStage)) {
           s.className = 'pipeline-step done';
           s.querySelector('.step-icon').textContent = '\u2713';
         }
       });
     } else if (data.status === 'done') {
-      stageEl.textContent = data.stage.charAt(0).toUpperCase() + data.stage.slice(1) + ' done';
+      stageEl.textContent = stepKey.charAt(0).toUpperCase() + stepKey.slice(1) + ' done';
       pipelineEl.querySelectorAll('.pipeline-step').forEach(function(s) {
-        if (s.getAttribute('data-stage') === stageKey) {
+        if (s.getAttribute('data-stage') === stepKey) {
           s.className = 'pipeline-step done';
           s.querySelector('.step-icon').textContent = '\u2713';
         }
@@ -843,8 +851,34 @@ function showGenerationResult(data) {
     '<button onclick="showPage(\'history\')" class="small">View in History</button>' +
     '<button onclick="resetGeneration()" class="small ghost">Generate More</button></div>';
 
+  if (data.config) {
+    var infoEl = document.getElementById('job-info');
+    if (!infoEl) {
+      infoEl = document.createElement('div');
+      infoEl.id = 'job-info';
+      infoEl.className = 'job-info';
+      var header = resultEl.querySelector('.card-header');
+      if (header) resultEl.insertBefore(infoEl, header);
+    }
+    infoEl.style.display = 'block';
+    var createdStr = data.created ? new Date(data.created).toLocaleString() : '';
+    var rows = data.config.rows || data.config.row_count || '';
+    var seed = data.config.seed || '';
+    infoEl.innerHTML = '<div class="job-info-grid">' +
+      (data.config.schema_name ? '<div class="job-info-item"><span class="job-info-label">Schema</span><span class="job-info-value">' + escapeHTML(data.config.schema_name) + '</span></div>' : '') +
+      (data.config.input ? '<div class="job-info-item" style="grid-column:1/-1"><span class="job-info-label">SQL Input</span><span class="job-info-value" style="font-family:monospace;font-size:11px;max-height:80px;overflow-y:auto;display:block;white-space:pre-wrap;word-break:break-word;line-height:1.4;padding:4px 0">' + escapeHTML(data.config.input.length > 500 ? data.config.input.slice(0, 500) + '...' : data.config.input) + '</span></div>' : '') +
+      (rows ? '<div class="job-info-item"><span class="job-info-label">Rows</span><span class="job-info-value">' + rows + '</span></div>' : '') +
+      (seed ? '<div class="job-info-item"><span class="job-info-label">Seed</span><span class="job-info-value">' + seed + '</span></div>' : '') +
+      (createdStr ? '<div class="job-info-item"><span class="job-info-label">Created</span><span class="job-info-value">' + createdStr + '</span></div>' : '') +
+      '</div>';
+  } else {
+    var infoEl = document.getElementById('job-info');
+    if (infoEl) infoEl.style.display = 'none';
+  }
+
   var metaEl = document.getElementById('result-meta');
-  metaEl.innerHTML = '<span class="badge badge-blue">Job #' + data.job_id + '</span><span>' + data.tables + ' tables</span><span>' + (data.format || '').toUpperCase() + '</span>';
+  var jobId = data.job_id || data.id;
+  metaEl.innerHTML = '<span class="badge badge-blue">Job #' + jobId + '</span><span>' + data.tables + ' tables</span><span>' + (data.format || '').toUpperCase() + '</span>';
   if (data.errors && data.errors.length) {
     metaEl.innerHTML += '<span style="color:var(--yellow)">' + data.errors.length + ' warning(s)</span>';
   }
@@ -991,7 +1025,7 @@ function downloadResult() {
   var data = lastJobData || (lastResult ? lastResult.data : null);
   if (!data) { toast('No data available', 'error'); return; }
   var format = (lastResult && lastResult.format) || 'csv';
-  var jobId = (lastResult && lastResult.job_id) || 'download';
+  var jobId = (lastResult && (lastResult.job_id || lastResult.id)) || 'download';
   var blob = new Blob([data], {type: 'text/plain'});
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
@@ -1076,6 +1110,8 @@ function viewJob(jobId) {
   var resultEl = document.getElementById('gen-result');
   var progressEl = document.getElementById('gen-progress');
   var pipelineEl = document.getElementById('gen-pipeline');
+  // Save DOM structure before replacing with loading indicator
+  var savedHTML = resultEl.innerHTML;
   pipelineEl.style.display = 'none';
   progressEl.style.display = 'none';
   resultEl.style.display = 'block';
@@ -1084,6 +1120,8 @@ function viewJob(jobId) {
     if (!res.ok) { throw new Error('Job not found'); }
     return res.json();
   }).then(function(job) {
+    // Restore original DOM structure before rendering into it
+    resultEl.innerHTML = savedHTML;
     lastResult = job;
     lastJobData = job.data;
     showGenerationResult(job);
@@ -1175,7 +1213,7 @@ var DOCS = {
 
       '<section class="docs-section"><h3>Step 1: Start the web app</h3>' +
       '<p>Open a terminal in the SynthGraph directory and run:</p>' +
-      '<pre><code># macOS/Linux:\nCGO_ENABLED=1 go run ./cmd/synthgraph-web/\n# Windows PowerShell:\n# $env:CGO_ENABLED=\\'1\\'; go run ./cmd/synthgraph-web/</code></pre>' +
+      '<pre><code># macOS/Linux:\nCGO_ENABLED=1 go run ./cmd/synthgraph-web/\n# Windows PowerShell:\n# $env:CGO_ENABLED=\'1\'; go run ./cmd/synthgraph-web/</code></pre>' +
       '<p>Open your browser to <a href="http://localhost:8080" target="_blank">http://localhost:8080</a>.</p></section>' +
 
       '<section class="docs-section"><h3>Step 2: Load a schema</h3>' +
@@ -1247,7 +1285,7 @@ var DOCS = {
     content: '<p class="docs-lead">Using SynthGraph from the command line for scripts, CI pipelines, and automation.</p>' +
 
       '<section class="docs-section"><h3>Installation</h3>' +
-      '<pre><code># macOS/Linux:\nCGO_ENABLED=1 go build -o synthgraph.exe ./cmd/synthgraph/\n# Windows PowerShell:\n# $env:CGO_ENABLED=\\'1\\'; go build -o synthgraph.exe ./cmd/synthgraph/</code></pre>' +
+      '<pre><code># macOS/Linux:\nCGO_ENABLED=1 go build -o synthgraph.exe ./cmd/synthgraph/\n# Windows PowerShell:\n# $env:CGO_ENABLED=\'1\'; go build -o synthgraph.exe ./cmd/synthgraph/</code></pre>' +
       '<p>This creates a single binary called <code>synthgraph.exe</code> in the current directory.</p></section>' +
 
       '<section class="docs-section"><h3>Basic usage</h3>' +

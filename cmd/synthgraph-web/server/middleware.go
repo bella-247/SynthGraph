@@ -141,6 +141,7 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 		responseWriter.Header().Set("X-Frame-Options", "DENY")
 		responseWriter.Header().Set("X-XSS-Protection", "0")
 		responseWriter.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		responseWriter.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'")
 		next.ServeHTTP(responseWriter, request)
 	})
 }

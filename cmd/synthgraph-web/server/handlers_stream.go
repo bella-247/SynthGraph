@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"synthgraph/internal/exporter"
 	"synthgraph/internal/generator"
 	"synthgraph/internal/graph"
+	"synthgraph/internal/parser"
 	"synthgraph/internal/parser/postgresql"
 	"synthgraph/internal/planner"
 	"synthgraph/internal/semantic"
@@ -73,14 +75,19 @@ func (stream *streamState) sendError(message string) {
 //	event: complete  data: {"job_id":1,"tables":5,"data":"...","format":"csv"}
 //	event: error     data: {"message":"parse error: ..."}
 func (server *Server) handleGenerateStream(responseWriter http.ResponseWriter, request *http.Request) {
+	flusher, supportsFlushing := responseWriter.(http.Flusher)
+	if !supportsFlushing {
+		writeError(responseWriter, http.StatusInternalServerError, "streaming not supported")
+		return
+	}
+
 	responseWriter.Header().Set("Content-Type", "text/event-stream")
 	responseWriter.Header().Set("Cache-Control", "no-cache")
 	responseWriter.Header().Set("Connection", "keep-alive")
 
-	stream, ready := newStreamState(responseWriter)
-	if !ready {
-		writeError(responseWriter, http.StatusInternalServerError, "streaming not supported")
-		return
+	stream := &streamState{
+		responseWriter: responseWriter,
+		flusher:        flusher,
 	}
 
 	rawSQL := request.URL.Query().Get("input")
@@ -97,6 +104,10 @@ func (server *Server) handleGenerateStream(responseWriter http.ResponseWriter, r
 
 	if strings.TrimSpace(rawSQL) == "" {
 		stream.sendError("input (SQL) is required")
+		return
+	}
+	if len(rawSQL) > maxSchemaBodySize {
+		stream.sendError(fmt.Sprintf("schema too large (%d bytes, max %d)", len(rawSQL), maxSchemaBodySize))
 		return
 	}
 	if rowCount <= 0 {
@@ -139,7 +150,11 @@ func (server *Server) handleGenerateStream(responseWriter http.ResponseWriter, r
 
 	parsedModel, parseError := postgresql.New().Parse([]byte(rawSQL))
 	if parseError != nil {
-		stream.sendError(fmt.Sprintf("parse error: %v", parseError))
+		if pe := (*parser.ParseError)(nil); errors.As(parseError, &pe) {
+			stream.sendError(pe.Error())
+		} else {
+			stream.sendError(fmt.Sprintf("parse error: %v", parseError))
+		}
 		return
 	}
 	stream.sendEvent("stage", map[string]string{"stage": "parsing", "status": "done"})
@@ -227,8 +242,15 @@ func (server *Server) handleGenerateStream(responseWriter http.ResponseWriter, r
 	var exportedData []byte
 	pipeReader, pipeWriter := io.Pipe()
 	go func() {
+		defer pipeWriter.Close()
+		// If the request is cancelled, stop exporting and close the pipe.
+		select {
+		case <-requestContext.Done():
+			return
+		default:
+		}
 		exportConfig := &exporter.ExportConfig{
-			SchemaName:   schemaName,
+			SchemaName:    schemaName,
 			IncludeHeader: true,
 		}
 		var exportError error

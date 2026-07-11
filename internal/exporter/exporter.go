@@ -81,4 +81,3 @@ func quoteIdentifier(name string) string {
 	escaped := strings.ReplaceAll(name, `"`, `""`)
 	return `"` + escaped + `"`
 }
-

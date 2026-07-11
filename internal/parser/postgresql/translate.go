@@ -26,11 +26,11 @@ type tableBuilder struct {
 //
 // The pipeline executes five stages in order:
 //
-//	 1. Extract — build initial state from []Stmt
-//	 2. Normalize — canonicalize types, merge constraints
-//	 3. Link — resolve FK and enum cross-references
-//	 4. Validate — check internal consistency
-//	 5. Build — deduplicate, mark PK columns, produce final output
+//  1. Extract — build initial state from []Stmt
+//  2. Normalize — canonicalize types, merge constraints
+//  3. Link — resolve FK and enum cross-references
+//  4. Validate — check internal consistency
+//  5. Build — deduplicate, mark PK columns, produce final output
 func Translate(stmts []Stmt) (*schema.Model, error) {
 	translator := newTranslator(stmts)
 	translator.normalize()
