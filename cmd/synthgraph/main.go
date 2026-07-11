@@ -5,7 +5,7 @@ import (
 	"os"
 )
 
-const version = "0.1.0"
+const version = "1.0.0"
 
 // globalLogger is the shared logger for all subcommands.
 var globalLogger = NewLogger(LevelInfo)

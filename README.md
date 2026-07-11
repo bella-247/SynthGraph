@@ -152,7 +152,7 @@ synthgraph inspect -i schema.sql -v                        # + graph + semantic 
 
 ```bash
 synthgraph version
-# → synthgraph version 0.1.0
+# → synthgraph version 1.0.0
 ```
 
 ---
