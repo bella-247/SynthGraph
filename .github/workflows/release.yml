@@ -115,17 +115,22 @@ jobs:
           go-version: '1.26'
       - name: Install C compiler
         run: |
-          if ! command -v gcc &>/dev/null; then
-            xcode-select --install 2>/dev/null || true
-          fi
+          which clang
+          clang --version
       - name: Extract version
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
       - name: Build CLI
+        env:
+          CC: ${{ matrix.arch == 'arm64' && 'clang' || 'clang -arch x86_64' }}
+          CGO_CFLAGS: "-Wno-error=incompatible-function-pointer-types"
         run: |
           GOOS=darwin GOARCH=${{ matrix.arch }} \
           go build -o dist/synthgraph-darwin-${{ matrix.arch }} ./cmd/synthgraph
       - name: Build Web App
+        env:
+          CC: ${{ matrix.arch == 'arm64' && 'clang' || 'clang -arch x86_64' }}
+          CGO_CFLAGS: "-Wno-error=incompatible-function-pointer-types"
         run: |
           GOOS=darwin GOARCH=${{ matrix.arch }} \
           go build -o dist/synthgraph-web-darwin-${{ matrix.arch }} ./cmd/synthgraph-web
