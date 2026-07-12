@@ -38,6 +38,12 @@ go build ./...
 go test ./...
 ```
 
+**macOS note:** If you hit a `strchrnul` error on Xcode 26+, the vendored `pg_query_go` C code has a symbol name collision. Workaround:
+```bash
+CGO_CFLAGS="-Wno-error=incompatible-function-pointer-types -Dstrchrnul=pg_strchrnul" go build ./...
+```
+The Makefile handles this automatically on macOS.
+
 ---
 
 ## Core Design Principles

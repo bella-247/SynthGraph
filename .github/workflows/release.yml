@@ -123,14 +123,14 @@ jobs:
       - name: Build CLI
         env:
           CC: ${{ matrix.arch == 'arm64' && 'clang' || 'clang -arch x86_64' }}
-          CGO_CFLAGS: "-Wno-error=incompatible-function-pointer-types"
+          CGO_CFLAGS: "-Wno-error=incompatible-function-pointer-types -Dstrchrnul=pg_strchrnul"
         run: |
           GOOS=darwin GOARCH=${{ matrix.arch }} \
           go build -o dist/synthgraph-darwin-${{ matrix.arch }} ./cmd/synthgraph
       - name: Build Web App
         env:
           CC: ${{ matrix.arch == 'arm64' && 'clang' || 'clang -arch x86_64' }}
-          CGO_CFLAGS: "-Wno-error=incompatible-function-pointer-types"
+          CGO_CFLAGS: "-Wno-error=incompatible-function-pointer-types -Dstrchrnul=pg_strchrnul"
         run: |
           GOOS=darwin GOARCH=${{ matrix.arch }} \
           go build -o dist/synthgraph-web-darwin-${{ matrix.arch }} ./cmd/synthgraph-web
@@ -177,7 +177,7 @@ jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [build-linux-cli, build-windows, build-docker]
+    needs: [build-linux-cli, build-windows, build-macos, build-docker]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -204,10 +204,11 @@ jobs:
             - **Linux arm64** — `synthgraph-web-linux-arm64`
             - **Windows amd64** — `synthgraph-web-windows-amd64.exe`
 
-            **macOS** — macOS builds are temporarily unavailable due to a `pg_query_go` SDK conflict. Track the fix at [issue #70](https://github.com/bella-247/SynthGraph/issues/70). In the meantime, install via Homebrew or Docker:
-            ```bash
-            docker run --rm ghcr.io/bella-247/synthgraph:v1.0.0 synthgraph generate -i schema.sql
-            ```
+            **macOS:**
+            - **macOS amd64** — `synthgraph-darwin-amd64`
+            - **macOS arm64** — `synthgraph-darwin-arm64`
+            - **Web (macOS amd64)** — `synthgraph-web-darwin-amd64`
+            - **Web (macOS arm64)** — `synthgraph-web-darwin-arm64`
 
             **Docker:**
             - `ghcr.io/${{ github.repository }}:v...`
