@@ -43,15 +43,27 @@ It supports PostgreSQL syntax and generates SQL or CSV output.
 
 ## Quick Install
 
-### Linux / macOS (one line)
+### Pre-built binary (easiest — no compiler needed)
+
+Download the latest release for your platform from [github.com/bella-247/SynthGraph/releases](https://github.com/bella-247/SynthGraph/releases):
+
+| Platform | CLI | Web UI |
+|----------|-----|--------|
+| Linux (amd64) | `synthgraph-linux-amd64` | `synthgraph-web-linux-amd64` |
+| Linux (arm64) | `synthgraph-linux-arm64` | `synthgraph-web-linux-arm64` |
+| macOS (Intel) | `synthgraph-darwin-amd64` | `synthgraph-web-darwin-amd64` |
+| macOS (Apple Silicon) | `synthgraph-darwin-arm64` | `synthgraph-web-darwin-arm64` |
+| Windows | `synthgraph-windows-amd64.exe` | `synthgraph-web-windows-amd64.exe` |
+
+Download, extract, run. That's it.
+
+### One-liner scripts
 
 ```bash
+# Linux / macOS
 curl -sSf https://raw.githubusercontent.com/bella-247/SynthGraph/main/scripts/install.sh | sh
-```
 
-### Windows (one line)
-
-```powershell
+# Windows (PowerShell)
 irm https://raw.githubusercontent.com/bella-247/SynthGraph/main/scripts/install.ps1 | iex
 ```
 
@@ -61,11 +73,7 @@ irm https://raw.githubusercontent.com/bella-247/SynthGraph/main/scripts/install.
 CGO_ENABLED=1 go install github.com/bella-247/SynthGraph/cmd/synthgraph@latest
 ```
 
-> **What is CGO and why do I need it?** SynthGraph uses the real PostgreSQL parser (written in C) to read SQL schemas. Go needs CGO to link against it. On Windows, install [MinGW-w64](https://www.msys2.org/) via MSYS2. On macOS, run `xcode-select --install`. On Linux, `sudo apt install gcc libpq-dev`.
-
-### Download a pre-built binary
-
-Grab the latest release from [github.com/bella-247/SynthGraph/releases](https://github.com/bella-247/SynthGraph/releases).
+> **Why CGO?** SynthGraph uses the real PostgreSQL parser (written in C) to understand SQL schemas. Go needs CGO to link against it. The pre-built binaries include the C library — you only need CGO if you're building from source.
 
 ---
 

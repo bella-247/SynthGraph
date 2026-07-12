@@ -67,6 +67,77 @@ jobs:
           name: synthgraph-web-linux-${{ matrix.arch }}
           path: dist/synthgraph-web-linux-${{ matrix.arch }}
 
+  build-windows:
+    name: Build (Windows)
+    runs-on: windows-latest
+    needs: [test]
+    strategy:
+      matrix:
+        arch: [amd64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      - name: Install MinGW
+        run: choco install mingw -y
+        shell: pwsh
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $env:GITHUB_OUTPUT
+        shell: pwsh
+      - name: Build CLI
+        run: go build -o dist/synthgraph-windows-${{ matrix.arch }}.exe ./cmd/synthgraph
+        shell: pwsh
+      - name: Build Web App
+        run: go build -o dist/synthgraph-web-windows-${{ matrix.arch }}.exe ./cmd/synthgraph-web
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthgraph-windows-${{ matrix.arch }}
+          path: dist/synthgraph-windows-${{ matrix.arch }}.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthgraph-web-windows-${{ matrix.arch }}
+          path: dist/synthgraph-web-windows-${{ matrix.arch }}.exe
+
+  build-macos:
+    name: Build (macOS)
+    runs-on: macos-latest
+    needs: [test]
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+      - name: Install C compiler
+        run: |
+          if ! command -v gcc &>/dev/null; then
+            xcode-select --install 2>/dev/null || true
+          fi
+      - name: Extract version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      - name: Build CLI
+        run: |
+          GOOS=darwin GOARCH=${{ matrix.arch }} \
+          go build -o dist/synthgraph-darwin-${{ matrix.arch }} ./cmd/synthgraph
+      - name: Build Web App
+        run: |
+          GOOS=darwin GOARCH=${{ matrix.arch }} \
+          go build -o dist/synthgraph-web-darwin-${{ matrix.arch }} ./cmd/synthgraph-web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthgraph-darwin-${{ matrix.arch }}
+          path: dist/synthgraph-darwin-${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthgraph-web-darwin-${{ matrix.arch }}
+          path: dist/synthgraph-web-darwin-${{ matrix.arch }}
+
   build-docker:
     name: Build Docker image
     runs-on: ubuntu-latest
@@ -101,7 +172,7 @@ jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
-    needs: [build-linux-cli, build-docker]
+    needs: [build-linux-cli, build-windows, build-macos, build-docker]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -121,16 +192,27 @@ jobs:
             **CLI:**
             - **Linux amd64** — `synthgraph-linux-amd64`
             - **Linux arm64** — `synthgraph-linux-arm64`
+            - **macOS amd64 (Intel)** — `synthgraph-darwin-amd64`
+            - **macOS arm64 (Apple Silicon)** — `synthgraph-darwin-arm64`
+            - **Windows amd64** — `synthgraph-windows-amd64.exe`
 
             **Web App:**
             - **Linux amd64** — `synthgraph-web-linux-amd64`
             - **Linux arm64** — `synthgraph-web-linux-arm64`
+            - **macOS amd64 (Intel)** — `synthgraph-web-darwin-amd64`
+            - **macOS arm64 (Apple Silicon)** — `synthgraph-web-darwin-arm64`
+            - **Windows amd64** — `synthgraph-web-windows-amd64.exe`
 
             **Docker:**
-            - `ghcr.io/${{ github.repository }}:v...` (default tag runs the CLI)
+            - `ghcr.io/${{ github.repository }}:v...`
             - Build the `web` stage: `docker build --target web -t synthgraph-web .`
 
-            > **Note:** macOS and Windows builds require a C compiler toolchain
-            > for CGO. Build from source with `CGO_ENABLED=1 go build ./cmd/synthgraph`.
+            **Checksums:** `checksums.txt`
+
+            ### Install from source
+
+            ```bash
+            CGO_ENABLED=1 go install github.com/bella-247/SynthGraph/cmd/synthgraph@latest
+            ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
