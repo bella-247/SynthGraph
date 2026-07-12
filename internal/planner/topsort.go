@@ -1,6 +1,10 @@
 package planner
 
-import "synthgraph/internal/graph"
+import (
+	"sort"
+
+	"synthgraph/internal/graph"
+)
 
 // topologicalSort performs Kahn's algorithm on the table nodes using
 // EdgeKindReferences edges as the dependency relationship.
@@ -35,6 +39,7 @@ func topologicalSort(schemaGraph *graph.Graph, tableNodes map[string]*graph.Node
 			queue = append(queue, nodeID)
 		}
 	}
+	sort.Strings(queue)
 
 	for len(queue) > 0 {
 		current := queue[0]
@@ -58,6 +63,7 @@ func topologicalSort(schemaGraph *graph.Graph, tableNodes map[string]*graph.Node
 			unresolved = append(unresolved, nodeID)
 		}
 	}
+	sort.Strings(unresolved)
 
 	return ordered, unresolved
 }
