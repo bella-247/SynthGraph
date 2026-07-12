@@ -123,14 +123,14 @@ jobs:
       - name: Build CLI
         env:
           CC: ${{ matrix.arch == 'arm64' && 'clang' || 'clang -arch x86_64' }}
-          CGO_CFLAGS: "-Wno-error=incompatible-function-pointer-types -Dstrchrnul=pg_strchrnul"
+          CGO_CFLAGS: "-Wno-error=incompatible-function-pointer-types -DHAVE_STRCHRNUL"
         run: |
           GOOS=darwin GOARCH=${{ matrix.arch }} \
           go build -o dist/synthgraph-darwin-${{ matrix.arch }} ./cmd/synthgraph
       - name: Build Web App
         env:
           CC: ${{ matrix.arch == 'arm64' && 'clang' || 'clang -arch x86_64' }}
-          CGO_CFLAGS: "-Wno-error=incompatible-function-pointer-types -Dstrchrnul=pg_strchrnul"
+          CGO_CFLAGS: "-Wno-error=incompatible-function-pointer-types -DHAVE_STRCHRNUL"
         run: |
           GOOS=darwin GOARCH=${{ matrix.arch }} \
           go build -o dist/synthgraph-web-darwin-${{ matrix.arch }} ./cmd/synthgraph-web

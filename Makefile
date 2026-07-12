@@ -8,7 +8,7 @@ SEED    ?= 42
 UNAME   := $(shell uname)
 CGO_BASE = -Wno-error=incompatible-function-pointer-types
 # macOS Xcode 26+ SDK conflicts with pg_query_go's vendored strchrnul
-CGO_FLAGS = $(CGO_BASE) $(and $(filter Darwin,$(UNAME)),-Dstrchrnul=pg_strchrnul)
+CGO_FLAGS = $(CGO_BASE) $(and $(filter Darwin,$(UNAME)),-DHAVE_STRCHRNUL)
 
 .PHONY: build-cli build-web build-all build run-web run-cli test test-quick test-server lint clean ci
 
